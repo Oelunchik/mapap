@@ -49,11 +49,11 @@
 <script>
 // ─── DATA ─────────────────────────────────────────────────────────────────────
 const USERS = [
-  { id:1, name:'Алуа',  role:'head',    dir:'Общее',                   email:'alua@mapap.kz' },
-  { id:2, name:'Арай',  role:'analyst', dir:'Авиация',                 email:'aray@mapap.kz' },
-  { id:3, name:'Диана', role:'analyst', dir:'Железнодорожный транспорт', email:'diana@mapap.kz' },
-  { id:4, name:'Ерхан', role:'analyst', dir:'Автотранспорт',           email:'erkhan@mapap.kz' },
-  { id:5, name:'Асыл',  role:'analyst', dir:'Беспилотные системы',     email:'asyl@mapap.kz' },
+  { id:1, name:'Алуа',  role:'head',    dir:'Общее',                   email:'alua@mapap.kz',   pass:'Alua2026!'   },
+  { id:2, name:'Арай',  role:'analyst', dir:'Авиация',                 email:'aray@mapap.kz',   pass:'Aray2026!'   },
+  { id:3, name:'Диана', role:'analyst', dir:'Железнодорожный транспорт', email:'diana@mapap.kz', pass:'Diana2026!'  },
+  { id:4, name:'Ерхан', role:'analyst', dir:'Автотранспорт',           email:'erkhan@mapap.kz', pass:'Erkhan2026!' },
+  { id:5, name:'Асыл',  role:'analyst', dir:'Беспилотные системы',     email:'asyl@mapap.kz',   pass:'Asyl2026!'   },
 ];
 
 const TASKS = [
@@ -222,20 +222,19 @@ function renderLogin() {
         <div class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input class="input" id="login-email" type="email" placeholder="alua@mapap.kz" value="alua@mapap.kz" />
+            <input class="input" id="login-email" type="email" placeholder="alua@mapap.kz" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
-            <input class="input" id="login-pass" type="password" placeholder="••••••••" value="mapap2026" />
+            <input class="input" id="login-pass" type="password" placeholder="••••••••" />
           </div>
           <button class="btn btn-primary w-full justify-center" onclick="doLogin()">Войти</button>
         </div>
         <div class="mt-4 pt-4 border-t text-xs text-gray-400">
-          <div class="font-medium text-gray-500 mb-1">Учётные записи:</div>
+          <div class="font-medium text-gray-500 mb-1">Быстрый выбор:</div>
           <div class="space-y-0.5">
-            ${USERS.map(u => `<div class="cursor-pointer hover:text-blue-600" onclick="quickLogin('${u.email}')">${u.email} — ${u.name} (${u.role==='head'?'Руководитель':'Аналитик'})</div>`).join('')}
+            ${USERS.map(u => `<div class="cursor-pointer hover:text-blue-600" onclick="quickLogin('${u.email}')">${u.name} — ${u.email}</div>`).join('')}
           </div>
-          <div class="mt-1 text-gray-300">Пароль для всех: mapap2026</div>
         </div>
       </div>
     </div>
@@ -660,6 +659,12 @@ function renderTaskModal() {
             <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:4px">Название</label>
             <input class="input" id="edit-title" value="${t.title.replace(/"/g,'&quot;')}" />
           </div>
+          <div style="margin-bottom:4px">
+            <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:4px">Исполнитель</label>
+            <select class="input" id="edit-assignee">
+              ${USERS.map(u=>`<option value="${u.id}"${t.assignee===u.id?' selected':''}>${u.name} — ${u.dir}</option>`).join('')}
+            </select>
+          </div>
           <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
             <div>
               <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:4px">Направление</label>
@@ -798,7 +803,7 @@ function doLogin() {
   const email = document.getElementById('login-email').value.trim();
   const pass  = document.getElementById('login-pass').value;
   const u = USERS.find(u=>u.email===email);
-  if (!u || pass !== 'mapap2026') { state.loginError='Неверный email или пароль'; render(); return; }
+  if (!u || pass !== u.pass) { state.loginError='Неверный email или пароль'; render(); return; }
   state.user = u;
   state.loginError = '';
   // Reset filters for analyst
@@ -808,7 +813,8 @@ function doLogin() {
 
 function quickLogin(email) {
   document.getElementById('login-email').value = email;
-  document.getElementById('login-pass').value = 'mapap2026';
+  document.getElementById('login-pass').value = '';
+  document.getElementById('login-pass').focus();
 }
 
 function doLogout() { state.user=null; state.page='dashboard'; render(); }
@@ -821,6 +827,7 @@ function saveTask(id) {
   const title = document.getElementById('edit-title').value.trim();
   if (!title) { alert('Название обязательно'); return; }
   t.title = title;
+  t.assignee = Number(document.getElementById('edit-assignee').value);
   t.dir = document.getElementById('edit-dir').value;
   t.type = document.getElementById('edit-type').value;
   t.priority = Number(document.getElementById('edit-priority').value);
