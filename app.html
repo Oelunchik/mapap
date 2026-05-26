@@ -130,48 +130,96 @@ const TRACKS = [
   { id:8, partner:'E-Freight / КЕДЕН',       dir:'Авиация',     responsible:'Арай',  status:'in_progress' },
 ];
 
-// ─── PERSISTENCE ──────────────────────────────────────────────────────────────
-const LS_TASKS  = 'mapap_tasks_v1';
-const LS_TRACKS = 'mapap_tracks_v1';
+// ─── CLOUD SYNC ───────────────────────────────────────────────────────────────
+const BLOB_URL = 'https://jsonblob.com/api/jsonBlob/019e62c2-b4ef-7f83-8060-591ceeddefd0';
+let _saveTimer = null;
 
-function loadTasks() {
+function _bakLoad() {
+  try { const b = JSON.parse(localStorage.getItem('mapap_bak') || '{}'); return b; } catch(e) { return {}; }
+}
+function _bakSave() {
+  try { localStorage.setItem('mapap_bak', JSON.stringify({tasks: state.tasks, tracks: state.tracks})); } catch(e) {}
+}
+
+async function loadFromCloud() {
   try {
-    const saved = localStorage.getItem(LS_TASKS);
-    if (saved) return JSON.parse(saved);
-  } catch(e) {}
-  return TASKS.map(t => ({...t}));
+    const res = await fetch(BLOB_URL + '?_=' + Date.now());
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    state.tasks  = data.tasks  || TASKS.map(t=>({...t}));
+    state.tracks = data.tracks || TRACKS.map(t=>({...t}));
+    _bakSave();
+  } catch(e) {
+    const bak = _bakLoad();
+    if (bak.tasks)  state.tasks  = bak.tasks;
+    if (bak.tracks) state.tracks = bak.tracks;
+  }
 }
-function saveTasks() {
-  try { localStorage.setItem(LS_TASKS, JSON.stringify(state.tasks)); } catch(e) {}
+
+function saveToCloud() {
+  _bakSave(); // мгновенный локальный бэкап
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    const dot = document.getElementById('sync-dot');
+    const lbl = document.getElementById('sync-label');
+    if (dot) { dot.style.background = '#fbbf24'; }
+    if (lbl) lbl.textContent = 'Сохранение...';
+    try {
+      await fetch(BLOB_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ tasks: state.tasks, tracks: state.tracks })
+      });
+      if (dot) dot.style.background = '#22c55e';
+      if (lbl) lbl.textContent = 'Синхронизировано';
+    } catch(e) {
+      if (dot) dot.style.background = '#f87171';
+      if (lbl) lbl.textContent = 'Нет соединения';
+    }
+  }, 600);
 }
-function loadTracks() {
-  try {
-    const saved = localStorage.getItem(LS_TRACKS);
-    if (saved) return JSON.parse(saved);
-  } catch(e) {}
-  return TRACKS.map(t => ({...t}));
+
+// каждые 20 сек подтягиваем изменения от других пользователей
+function startPolling() {
+  setInterval(async () => {
+    if (!state.user || state.modal || state.showCreateModal) return;
+    try {
+      const res = await fetch(BLOB_URL + '?_=' + Date.now());
+      if (!res.ok) return;
+      const data = await res.json();
+      if (JSON.stringify(data.tasks)  !== JSON.stringify(state.tasks) ||
+          JSON.stringify(data.tracks) !== JSON.stringify(state.tracks)) {
+        state.tasks  = data.tasks;
+        state.tracks = data.tracks;
+        _bakSave();
+        render();
+      }
+    } catch(e) {}
+  }, 20000);
 }
-function saveTracks() {
-  try { localStorage.setItem(LS_TRACKS, JSON.stringify(state.tracks)); } catch(e) {}
-}
+
+// compat stubs (старые вызовы saveTasks/saveTracks → saveToCloud)
+const saveTasks  = saveToCloud;
+const saveTracks = saveToCloud;
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
+const _bak = _bakLoad();
 let state = {
   page: 'dashboard',
   user: null,
   loginError: '',
-  tasks: loadTasks(),
+  tasks:  _bak.tasks  || TASKS.map(t=>({...t})),
   filterAssignee: 0,
   filterDir: '',
   filterStatus: '',
   filterPriority: 0,
-  modal: null,       // null | { taskId: number }
+  modal: null,
   modalTab: 'details',
   showCreateModal: false,
   createForm: { title:'', description:'', assignee:1, dir:'Общее', type:'Проект', priority:2, due:'', urgent:false },
   createError: '',
   kanbanDrag: null,
-  tracks: loadTracks(),
+  tracks: _bak.tracks || TRACKS.map(t=>({...t})),
 };
 
 function getUser(id) { return USERS.find(u => u.id === id); }
@@ -293,6 +341,10 @@ function renderApp() {
             <div class="text-sm font-medium">${state.user.name}</div>
             <div class="text-xs" style="color:#93c5fd">${state.user.role==='head'?'Руководитель':'Аналитик'} · ${state.user.dir}</div>
           </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding:4px 12px 8px;font-size:11px;color:#93c5fd">
+          <div id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0" title="Синхронизировано"></div>
+          <span id="sync-label">Синхронизировано</span>
         </div>
         <div class="nav-link text-xs" onclick="doLogout()">Выйти</div>
       </div>
@@ -934,7 +986,19 @@ function exportCSV() {
 }
 
 // ─── BOOT ────────────────────────────────────────────────────────────────────
-render();
+document.getElementById('app').innerHTML = `
+  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1e3a8a,#2563eb)">
+    <div style="text-align:center;color:#fff">
+      <div style="font-size:48px;margin-bottom:16px">🚦</div>
+      <div style="font-size:22px;font-weight:700;letter-spacing:-0.5px;margin-bottom:6px">MAPAP</div>
+      <div style="font-size:13px;color:#93c5fd">Загрузка данных...</div>
+    </div>
+  </div>`;
+
+loadFromCloud().then(() => {
+  render();
+  startPolling();
+});
 </script>
 </body>
 </html>
