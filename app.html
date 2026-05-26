@@ -130,12 +130,37 @@ const TRACKS = [
   { id:8, partner:'E-Freight / КЕДЕН',       dir:'Авиация',     responsible:'Арай',  status:'in_progress' },
 ];
 
+// ─── PERSISTENCE ──────────────────────────────────────────────────────────────
+const LS_TASKS  = 'mapap_tasks_v1';
+const LS_TRACKS = 'mapap_tracks_v1';
+
+function loadTasks() {
+  try {
+    const saved = localStorage.getItem(LS_TASKS);
+    if (saved) return JSON.parse(saved);
+  } catch(e) {}
+  return TASKS.map(t => ({...t}));
+}
+function saveTasks() {
+  try { localStorage.setItem(LS_TASKS, JSON.stringify(state.tasks)); } catch(e) {}
+}
+function loadTracks() {
+  try {
+    const saved = localStorage.getItem(LS_TRACKS);
+    if (saved) return JSON.parse(saved);
+  } catch(e) {}
+  return TRACKS.map(t => ({...t}));
+}
+function saveTracks() {
+  try { localStorage.setItem(LS_TRACKS, JSON.stringify(state.tracks)); } catch(e) {}
+}
+
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let state = {
   page: 'dashboard',
   user: null,
   loginError: '',
-  tasks: TASKS.map(t => ({...t})),
+  tasks: loadTasks(),
   filterAssignee: 0,
   filterDir: '',
   filterStatus: '',
@@ -146,7 +171,7 @@ let state = {
   createForm: { title:'', description:'', assignee:1, dir:'Общее', type:'Проект', priority:2, due:'', urgent:false },
   createError: '',
   kanbanDrag: null,
-  tracks: TRACKS.map(t => ({...t})),
+  tracks: loadTracks(),
 };
 
 function getUser(id) { return USERS.find(u => u.id === id); }
@@ -695,9 +720,12 @@ function renderTaskModal() {
             <div style="display:flex;gap:4px">${priBadge(t.priority)} ${statusBadge(t.status)}</div>
           </div>
         </div>
-        <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb">
-          <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
-          <button class="btn btn-primary" onclick="saveTask(${t.id})">Сохранить</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb">
+          <button onclick="deleteTask(${t.id})" style="background:none;border:none;color:#ef4444;font-size:13px;cursor:pointer;padding:6px 0">🗑 Удалить задачу</button>
+          <div style="display:flex;gap:12px">
+            <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+            <button class="btn btn-primary" onclick="saveTask(${t.id})">Сохранить</button>
+          </div>
         </div>
         ` : `
         <div>
@@ -832,6 +860,7 @@ function saveTask(id) {
   t.type = document.getElementById('edit-type').value;
   t.priority = Number(document.getElementById('edit-priority').value);
   t.due = document.getElementById('edit-due').value || null;
+  saveTasks();
   closeModal();
 }
 
@@ -842,6 +871,7 @@ function applyStatus(id) {
     alert('Комментарий обязателен при блокировке'); return;
   }
   state.tasks.find(t=>t.id===id).status = newStatus;
+  saveTasks();
   closeModal();
 }
 
@@ -862,6 +892,7 @@ function createTask() {
   });
   state.showCreateModal=false;
   state.createError='';
+  saveTasks();
   render();
 }
 
@@ -871,6 +902,7 @@ function kanbanDrop(newStatus) {
   if (t) {
     if (newStatus==='done' && state.user.role!=='head') { alert('Только руководитель может закрывать задачи'); return; }
     t.status = newStatus;
+    saveTasks();
   }
   state.kanbanDrag = null;
   render();
@@ -878,7 +910,15 @@ function kanbanDrop(newStatus) {
 
 function updateTrack(id, newStatus) {
   const t = state.tracks.find(t=>t.id===id);
-  if (t) t.status = newStatus;
+  if (t) { t.status = newStatus; saveTracks(); }
+}
+
+function deleteTask(id) {
+  if (!confirm('Удалить задачу? Это действие нельзя отменить.')) return;
+  state.tasks = state.tasks.filter(t => t.id !== id);
+  saveTasks();
+  state.modal = null;
+  render();
 }
 
 function exportCSV() {
