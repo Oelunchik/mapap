@@ -249,6 +249,60 @@ function filteredTasks() {
   });
 }
 
+// ─── KPI DATA (I полугодие 2026) ──────────────────────────────────────────────
+const KPI = {
+  avia: {
+    icon:'✈️', title:'Авиационные грузоперевозки',
+    factH1: 85.1, planH1: 92.5, unit:'тыс. тонн',
+    pct: 92.0, delta: -7.4, deltaPct: -8.0, yoy: +7.0,
+    kpi2026: '~205 тыс. т', orient2030: '~410 тыс. т',
+    needH2: 120.6, needH2unit:'тыс. тонн', needH2yoy:'+24,8% г/г',
+    quarters:[
+      { label:'Q1 2026', fact:36.3, plan:45.8, pct:79.4, yoy:-6.3 },
+      { label:'Q2 2026', fact:48.8, plan:46.7, pct:104.3, yoy:+19.7 },
+    ],
+    risks:['Общий план I п/г не выполнен — разрыв 7,4 тыс. т', 'Нужно ускорение: +24,8% г/г во II полугодии'],
+    wins: ['Q2 перевыполнен (+4,3% к плану)', 'Динамика г/г положительная: +7,0%', 'Караганда: рост +110,7% г/г (+5,6 тыс. т)'],
+    subs: null,
+  },
+  auto: {
+    icon:'🚛', title:'Автомобильные грузоперевозки',
+    factH1: 8.1, planH1: 8.0, unit:'млн тонн',
+    pct: 101.0, delta: +0.1, deltaPct: +1.0, yoy: +14.0,
+    kpi2026: '~16,1 млн т', orient2030: '~30,2 млн т',
+    needH2: 8.0, needH2unit:'млн тонн', needH2yoy:'–1,2% к I п/г',
+    quarters: null,
+    risks:['Импорт: нужно ускорение +45,8% во II п/г', 'Транзит: отставание –15,0% к плану II п/г'],
+    wins: ['I полугодие выполнено на 101% — план перевыполнен', 'Динамика г/г: +14%', 'Экспорт: 59,2% годового KPI выполнено'],
+    subs:[
+      { label:'Экспорт', fact:1.7, plan:2.87, pct:59.2, needH2:1.17, needDelta:-31.2 },
+      { label:'Импорт',  fact:2.4, plan:5.9,  pct:40.7, needH2:3.50, needDelta:+45.8 },
+      { label:'Транзит', fact:4.0, plan:7.4,  pct:54.1, needH2:3.40, needDelta:-15.0 },
+    ],
+  },
+  rail: {
+    icon:'🚂', title:'Железнодорожные грузоперевозки',
+    factH1: 17.6, planH1: 25.3, unit:'млн тонн',
+    pct: 69.6, delta: -7.7, deltaPct: -30.4, yoy: +12.1,
+    kpi2026: '~55 млн т', orient2030: '~100 млн т',
+    needH2: 37.4, needH2unit:'млн тонн', needH2yoy:'6,2 млн т/мес среднемесячно',
+    quarters:[
+      { label:'Q1 2026', fact:9.1, plan:12.1, pct:75.1, yoy:+14.1 },
+      { label:'Q2 2026', fact:8.5, plan:13.2, pct:64.5, yoy:+10.0 },
+    ],
+    risks:[
+      'Контейнерный транзит: 361,3 тыс. ДФЭ — лишь 45,5% плана (794 тыс.)',
+      'Доля согласованных заявок упала до 54,2% (–15,6 п.п. г/г)',
+      'Нефть и нефтепродукты: откл. 9,9 млн т (47,3%)',
+      'Контейнеры: откл. 7,6 млн т (50,4%)',
+    ],
+    wins: ['Динамика г/г: +12,1%', 'Q1: +14,1% г/г', 'Нефть: план выполнен на 101%'],
+    subs: null,
+    containers: { fact:361.3, plan:794.0, pct:45.5, yoy:+7.5 },
+    approvals:  { pct:54.2, delta:-15.6 },
+  },
+};
+
 // ─── RENDER HELPERS ───────────────────────────────────────────────────────────
 const STATUS_CFG = {
   new:         { label:'Новая',           cls:'bg-gray-100 text-gray-700' },
@@ -315,13 +369,14 @@ function renderLogin() {
 }
 
 function renderApp() {
-  const pages = { dashboard: renderDashboard, tasks: renderTasks, kanban: renderKanban, tracks: renderTracks, reports: renderReports };
+  const pages = { dashboard: renderDashboard, tasks: renderTasks, kanban: renderKanban, tracks: renderTracks, kpi: renderKPI, reports: renderReports };
   const content = (pages[state.page] || renderDashboard)();
   const NAV = [
     { id:'dashboard', icon:'📊', label:'Дашборд' },
     { id:'tasks',     icon:'📋', label:'Задачи' },
     { id:'kanban',    icon:'🗂',  label:'Канбан' },
     { id:'tracks',    icon:'🌐', label:'Международные треки' },
+    { id:'kpi',       icon:'🎯', label:'KPI мониторинг' },
     { id:'reports',   icon:'📈', label:'Отчёты' },
   ];
   return `
@@ -704,6 +759,182 @@ function renderReports() {
           </div>
         </div>`).join('')}
       </div>
+    </div>
+  </div>`;
+}
+
+function renderKPI() {
+  function pctColor(p) {
+    if (p >= 95) return '#16a34a';
+    if (p >= 70) return '#f59e0b';
+    return '#dc2626';
+  }
+  function pctBg(p) {
+    if (p >= 95) return '#dcfce7';
+    if (p >= 70) return '#fef9c3';
+    return '#fee2e2';
+  }
+  function bar(pct, color) {
+    const w = Math.min(pct, 100);
+    return `<div style="height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:6px">
+      <div style="height:100%;width:${w}%;background:${color};border-radius:999px;transition:width .6s"></div>
+    </div>`;
+  }
+  function kpiCard(k) {
+    const color = pctColor(k.pct);
+    const bg    = pctBg(k.pct);
+    return `
+    <div class="card p-5">
+      <!-- Заголовок -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <span style="font-size:24px">${k.icon}</span>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:#0f172a">${k.title}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:1px">I полугодие 2026 · факт vs план</div>
+        </div>
+      </div>
+
+      <!-- Главные цифры -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div style="background:#f8fafc;border-radius:10px;padding:12px">
+          <div style="font-size:22px;font-weight:800;color:#0f172a;letter-spacing:-1px">${k.factH1}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px">факт, ${k.unit}</div>
+        </div>
+        <div style="background:${bg};border-radius:10px;padding:12px">
+          <div style="font-size:22px;font-weight:800;color:${color};letter-spacing:-1px">${k.pct}%</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px">выполнение плана</div>
+          ${bar(k.pct, color)}
+        </div>
+        <div style="background:#f8fafc;border-radius:10px;padding:12px">
+          <div style="font-size:22px;font-weight:800;color:${k.yoy>=0?'#16a34a':'#dc2626'};letter-spacing:-1px">${k.yoy>0?'+':''}${k.yoy}%</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px">динамика г/г</div>
+        </div>
+      </div>
+
+      <!-- KPI и ориентир -->
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <div style="flex:1;background:#eff6ff;border-radius:8px;padding:8px 12px">
+          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#3b82f6;margin-bottom:2px">KPI 2026</div>
+          <div style="font-size:14px;font-weight:700;color:#1e40af">${k.kpi2026}</div>
+        </div>
+        <div style="flex:1;background:#f0fdf4;border-radius:8px;padding:8px 12px">
+          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#16a34a;margin-bottom:2px">Ориентир 2030</div>
+          <div style="font-size:14px;font-weight:700;color:#15803d">${k.orient2030}</div>
+        </div>
+        <div style="flex:1;background:#fff7ed;border-radius:8px;padding:8px 12px">
+          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#ea580c;margin-bottom:2px">Нужно во II п/г</div>
+          <div style="font-size:14px;font-weight:700;color:#c2410c">${k.needH2} ${k.needH2unit}</div>
+        </div>
+      </div>
+
+      ${k.quarters ? `
+      <!-- Кварталы -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Поквартальная динамика</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          ${k.quarters.map(q=>`
+          <div style="background:#f8fafc;border-radius:8px;padding:10px">
+            <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:4px">${q.label}</div>
+            <div style="font-size:13px;font-weight:700;color:#0f172a">${q.fact} / ${q.plan} ${k.unit.split(' ')[0]}</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+              <span style="font-size:12px;font-weight:700;color:${pctColor(q.pct)}">${q.pct}%</span>
+              <span style="font-size:11px;color:${q.yoy>=0?'#16a34a':'#dc2626'}">${q.yoy>0?'+':''}${q.yoy}% г/г</span>
+            </div>
+            ${bar(q.pct, pctColor(q.pct))}
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+      ${k.subs ? `
+      <!-- Разбивка (авто) -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Разбивка I п/г, млн тонн</div>
+        ${k.subs.map(s=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="width:56px;font-size:12px;color:#374151;font-weight:500">${s.label}</div>
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:2px">
+              <span>${s.fact} / ${s.plan}</span>
+              <span style="color:${pctColor(s.pct)};font-weight:600">${s.pct}%</span>
+            </div>
+            ${bar(s.pct, pctColor(s.pct))}
+          </div>
+          <div style="width:64px;text-align:right;font-size:11px;color:${s.needDelta>=0?'#dc2626':'#16a34a'};font-weight:600">${s.needDelta>0?'+':''}${s.needDelta}%</div>
+        </div>`).join('')}
+        <div style="font-size:10px;color:#94a3b8;margin-top:4px">% справа — изменение к I п/г во II полугодии</div>
+      </div>` : ''}
+
+      ${k.containers ? `
+      <!-- Контейнерный транзит -->
+      <div style="background:#f8fafc;border-radius:10px;padding:12px;margin-bottom:12px">
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px">Контейнерный транзит (янв–март)</div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:18px;font-weight:800;color:#0f172a">${k.containers.fact} тыс. ДФЭ</div>
+            <div style="font-size:11px;color:#64748b">план ${k.containers.plan} тыс. · +${k.containers.yoy}% г/г</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:20px;font-weight:800;color:${pctColor(k.containers.pct)}">${k.containers.pct}%</div>
+            <div style="font-size:11px;color:#64748b">выполнение</div>
+          </div>
+        </div>
+        ${bar(k.containers.pct, pctColor(k.containers.pct))}
+      </div>
+      <div style="background:#fef2f2;border-radius:10px;padding:12px;margin-bottom:12px">
+        <div style="font-size:12px;font-weight:600;color:#dc2626;margin-bottom:4px">⚠ Согласование заявок (янв–май)</div>
+        <div style="font-size:20px;font-weight:800;color:#dc2626">${k.approvals.pct}% <span style="font-size:13px;font-weight:500">(${k.approvals.delta} п.п. г/г)</span></div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">доля согласованных заявок — снижение ограничивает грузовую базу</div>
+      </div>` : ''}
+
+      <!-- Риски и успехи -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <div style="font-size:11px;font-weight:600;color:#dc2626;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">⚠ Риски</div>
+          ${k.risks.map(r=>`<div style="font-size:12px;color:#374151;padding:4px 0;border-bottom:1px solid #f1f5f9;line-height:1.4">${r}</div>`).join('')}
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:#16a34a;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">✓ Достижения</div>
+          ${k.wins.map(w=>`<div style="font-size:12px;color:#374151;padding:4px 0;border-bottom:1px solid #f1f5f9;line-height:1.4">${w}</div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return `
+  <div class="p-6 space-y-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">KPI мониторинг</h1>
+      <p class="text-gray-500 text-sm mt-0.5">Выполнение KPI по направлениям · I полугодие 2026</p>
+    </div>
+
+    <!-- Сводка сверху -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+      ${[
+        { icon:'✈️', label:'Авиация', pct:92.0, fact:'85,1 тыс. т', yoy:'+7,0%' },
+        { icon:'🚛', label:'Автотранспорт', pct:101.0, fact:'8,1 млн т', yoy:'+14,0%' },
+        { icon:'🚂', label:'Железная дорога', pct:69.6, fact:'17,6 млн т', yoy:'+12,1%' },
+      ].map(s=>`
+      <div class="card p-4" style="border-left:4px solid ${pctColor(s.pct)}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-size:12px;color:#64748b;margin-bottom:2px">${s.icon} ${s.label}</div>
+            <div style="font-size:20px;font-weight:800;color:${pctColor(s.pct)}">${s.pct}%</div>
+            <div style="font-size:11px;color:#64748b">план выполнен</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:14px;font-weight:700;color:#0f172a">${s.fact}</div>
+            <div style="font-size:12px;color:#16a34a;font-weight:600">${s.yoy} г/г</div>
+          </div>
+        </div>
+        ${bar(s.pct, pctColor(s.pct))}
+      </div>`).join('')}
+    </div>
+
+    <!-- Карточки по направлениям -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;align-items:start">
+      ${kpiCard(KPI.avia)}
+      ${kpiCard(KPI.auto)}
+      ${kpiCard(KPI.rail)}
     </div>
   </div>`;
 }
