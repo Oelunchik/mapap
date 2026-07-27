@@ -242,6 +242,10 @@ let state = {
   weeklyData:  JSON.parse(localStorage.getItem('mapap_weekly')||'{}'),
   weekTaskInput: '',
   weekTaskCat: 'meeting',
+  stickies: JSON.parse(localStorage.getItem('mapap_stickies')||'{}'),
+  stickyWeek: isoWeekKey(new Date()),
+  createPrefilledTitle: '',
+  createProjectId: null,
 };
 
 function getUser(id) { return USERS.find(u => u.id === id); }
@@ -448,7 +452,7 @@ function renderApp() {
     { id:'dashboard', icon:'📊', label:'Дашборд' },
     { id:'myweek',    icon:'📅', label:'Моя неделя' },
     { id:'tasks',     icon:'📋', label:'Задачи' },
-    { id:'kanban',    icon:'🗂',  label:'Канбан' },
+    { id:'kanban',    icon:'🗒',  label:'Заметки недели' },
     { id:'tracks',    icon:'🌐', label:'Международные треки' },
     { id:'projects',  icon:'📂', label:'Реестр проектов' },
     { id:'kpi',       icon:'🎯', label:'KPI мониторинг' },
@@ -598,7 +602,7 @@ function renderTasks() {
   return `
   <div class="p-6 space-y-4">
     <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-gray-900">Задачи</h1>
+      <h1 class="text-2xl font-bold text-gray-900">Мои задачи</h1>
       <button class="btn btn-primary" onclick="state.showCreateModal=true;render()">+ Новая задача</button>
     </div>
     <div class="card p-4 flex flex-wrap gap-3">
@@ -637,6 +641,7 @@ function renderTasks() {
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Задача</th>
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Исполнитель</th>
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Направление</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Проект</th>
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Тип</th>
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Приоритет</th>
               <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Статус</th>
@@ -653,6 +658,7 @@ function renderTasks() {
               </td>
               <td class="px-4 py-3 text-gray-600">${assigneeName(t.assignee)}</td>
               <td class="px-4 py-3 text-gray-600">${t.dir}</td>
+              <td class="px-4 py-3" style="font-size:11px;color:#3b82f6">${t.projectId ? (state.projects.find(p=>p.id===t.projectId)?.project||'—') : '<span style="color:#d1d5db">—</span>'}</td>
               <td class="px-4 py-3 text-gray-500">${t.type}</td>
               <td class="px-4 py-3">${priBadge(t.priority)}</td>
               <td class="px-4 py-3">${statusBadge(t.status)}</td>
@@ -666,57 +672,146 @@ function renderTasks() {
   </div>`;
 }
 
+// ─── STICKY NOTES (Заметки недели) ────────────────────────────────────────────
+const STICKY_COLS = [
+  { id:'ideas',   label:'Идеи',     icon:'💡', hdr:'#fef9c3', hdrText:'#92400e' },
+  { id:'doing',   label:'В работе', icon:'🔨', hdr:'#dbeafe', hdrText:'#1e40af' },
+  { id:'discuss', label:'Обсудить', icon:'💬', hdr:'#ede9fe', hdrText:'#5b21b6' },
+  { id:'done',    label:'Готово',   icon:'✅', hdr:'#d1fae5', hdrText:'#065f46' },
+];
+const STICKY_PALETTE = ['#fef9c3','#d1fae5','#dbeafe','#fce7f3','#ffedd5','#f0fdf4'];
+
+function getStickyData() {
+  if (!state.stickies[state.stickyWeek])
+    state.stickies[state.stickyWeek] = { ideas:[], doing:[], discuss:[], done:[] };
+  return state.stickies[state.stickyWeek];
+}
+function saveStickies() {
+  try { localStorage.setItem('mapap_stickies', JSON.stringify(state.stickies)); } catch(e) {}
+}
+function addSticky(col) {
+  const el = document.getElementById('sticky-input-' + col);
+  const text = (el?.value || '').trim();
+  if (!text) return;
+  const data = getStickyData();
+  if (!data[col]) data[col] = [];
+  const total = Object.values(data).reduce((n,a)=>n+(a||[]).length,0);
+  data[col].push({ id: Date.now(), text, color: STICKY_PALETTE[total % STICKY_PALETTE.length] });
+  saveStickies();
+  render();
+  setTimeout(() => { const e = document.getElementById('sticky-input-' + col); if(e){e.value='';e.focus();} }, 40);
+}
+function deleteSticky(col, id) {
+  const data = getStickyData();
+  if (data[col]) data[col] = data[col].filter(s => s.id !== id);
+  saveStickies(); render();
+}
+function moveSticky(fromCol, id, toCol) {
+  const data = getStickyData();
+  const s = (data[fromCol]||[]).find(x => x.id === id);
+  if (!s) return;
+  data[fromCol] = data[fromCol].filter(x => x.id !== id);
+  if (!data[toCol]) data[toCol] = [];
+  data[toCol].push(s);
+  saveStickies(); render();
+}
+function stickyToTask(col, id) {
+  const data = getStickyData();
+  const s = (data[col]||[]).find(x => x.id === id);
+  if (!s) return;
+  state.createPrefilledTitle = s.text;
+  state.showCreateModal = true;
+  render();
+}
+function resetStickyBoard() {
+  if (!confirm('Очистить все заметки этой недели?')) return;
+  state.stickies[state.stickyWeek] = { ideas:[], doing:[], discuss:[], done:[] };
+  saveStickies(); render();
+}
+function navStickyWeek(delta) {
+  const { mon } = weekDates(state.stickyWeek);
+  mon.setUTCDate(mon.getUTCDate() + delta * 7);
+  state.stickyWeek = isoWeekKey(mon);
+  render();
+}
+function addTaskToProject(projId) {
+  const proj = state.projects.find(p => p.id === projId);
+  state.createPrefilledTitle = proj ? proj.project + ' — ' : '';
+  state.createProjectId = projId;
+  state.showCreateModal = true;
+  render();
+}
+
 function renderKanban() {
-  const COLS = [
-    { key:'new',         label:'Новая',        color:'#f3f4f6' },
-    { key:'in_progress', label:'В работе',      color:'#dbeafe' },
-    { key:'review',      label:'На проверке',   color:'#fef9c3' },
-    { key:'done',        label:'Готово',        color:'#dcfce7' },
-    { key:'blocked',     label:'Заблокировано', color:'#fee2e2' },
-  ];
-  const myTasks = state.user.role==='head' ? state.tasks : state.tasks.filter(t=>t.assignee===state.user.id);
+  const todayKey = isoWeekKey(new Date());
+  const isCurrent = state.stickyWeek === todayKey;
+  const wNum = state.stickyWeek.split('-W')[1];
+  const data = getStickyData();
+  const allWeeks = Object.keys(state.stickies).sort().reverse();
+  const totalNotes = Object.values(data).reduce((n,col)=>n+(col||[]).length,0);
 
   return `
-  <div class="p-6 flex flex-col" style="height:100%">
-    <div class="flex items-center justify-between mb-5">
-      <h1 class="text-2xl font-bold text-gray-900">Канбан-доска</h1>
-      <button class="btn btn-primary" onclick="state.showCreateModal=true;render()">+ Новая задача</button>
-    </div>
-    <div style="flex:1;overflow-x:auto">
-      <div style="display:flex;gap:16px;height:100%;min-width:max-content;padding-bottom:16px">
-        ${COLS.map(col => {
-          const cards = myTasks.filter(t=>t.status===col.key);
-          return `
-          <div style="width:240px;flex-shrink:0;display:flex;flex-direction:column"
-               ondragover="event.preventDefault()" ondrop="kanbanDrop('${col.key}')">
-            <div style="background:${col.color};border:1px solid #e5e7eb;border-bottom:none;border-radius:12px 12px 0 0;padding:10px 12px">
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <span style="font-size:13px;font-weight:600;color:#374151">${col.label}</span>
-                <span style="background:#fff;color:#6b7280;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px">${cards.length}</span>
-              </div>
-            </div>
-            <div style="flex:1;overflow-y:auto;background:#f9fafb;border:1px solid #e5e7eb;border-radius:0 0 12px 12px;padding:8px;display:flex;flex-direction:column;gap:8px">
-              ${cards.length===0?'<div style="text-align:center;color:#d1d5db;font-size:12px;padding:16px">Пусто</div>':''}
-              ${cards.map(t=>`
-              <div class="kanban-card"
-                   draggable="true"
-                   ondragstart="state.kanbanDrag=${t.id}"
-                   ondragend="state.kanbanDrag=null"
-                   onclick="openTask(${t.id})"
-                   style="border-left:4px solid ${t.priority===1?'#f87171':t.priority===2?'#fbbf24':'#e5e7eb'}">
-                <div style="font-size:13px;font-weight:500;color:#1f2937;line-height:1.4;margin-bottom:6px">${t.title}</div>
-                <div style="font-size:11px;color:#6b7280;display:flex;justify-content:space-between;align-items:center">
-                  <span>${assigneeName(t.assignee)}</span>
-                  ${t.urgent?'<span style="color:#ef4444">⚡</span>':''}
-                </div>
-                ${t.due?`<div style="font-size:11px;margin-top:4px;color:${new Date(t.due)<new Date()?'#dc2626':'#9ca3af'}">📅 ${new Date(t.due).toLocaleDateString('ru-RU')}</div>`:''}
-                <div style="font-size:11px;color:#9ca3af;margin-top:4px">${t.dir}</div>
-              </div>`).join('')}
-            </div>
-          </div>`;
-        }).join('')}
+  <div class="p-6">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h1 style="font-size:22px;font-weight:700;color:#0f172a">🗒 Заметки недели</h1>
+        <p style="font-size:12px;color:#64748b;margin-top:2px">Черновая доска · пишите заметки, нажмите «→ задачу» чтобы добавить в работу</p>
+      </div>
+      <div style="display:flex;gap:8px">
+        ${totalNotes>0?`<button onclick="resetStickyBoard()" style="background:#fff;border:1px solid #fca5a5;color:#ef4444;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer">🗑 Очистить</button>`:''}
+        <button class="btn btn-primary" onclick="state.showCreateModal=true;render()">+ Задачу</button>
       </div>
     </div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px">
+      <button onclick="navStickyWeek(-1)" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center">←</button>
+      <div style="flex:1;text-align:center">
+        <span style="font-size:14px;font-weight:600;color:#0f172a">Неделя ${wNum} · ${weekLabel(state.stickyWeek)}</span>
+        ${isCurrent?`<span style="font-size:11px;color:#16a34a;font-weight:600;margin-left:8px">● текущая</span>`:''}
+      </div>
+      <button onclick="navStickyWeek(1)" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center">→</button>
+      ${!isCurrent?`<button onclick="state.stickyWeek='${todayKey}';render()" style="background:#f1f5f9;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;color:#475569">Сегодня</button>`:''}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:start">
+      ${STICKY_COLS.map(col => {
+        const stickies = data[col.id] || [];
+        return `
+        <div>
+          <div style="background:${col.hdr};border-radius:10px 10px 0 0;padding:9px 14px;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:13px;font-weight:700;color:${col.hdrText}">${col.icon} ${col.label}</span>
+            <span style="background:rgba(0,0,0,.07);color:${col.hdrText};font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px">${stickies.length}</span>
+          </div>
+          <div style="background:#f8fafc;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 10px 10px;padding:10px;min-height:220px;display:flex;flex-direction:column;gap:8px">
+            ${stickies.map(s => `
+            <div style="background:${s.color};border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+              <div style="font-size:13px;color:#1e293b;line-height:1.45;word-break:break-word;margin-bottom:8px">${s.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+              <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+                ${STICKY_COLS.filter(c=>c.id!==col.id).map(tc=>`
+                <button onclick="moveSticky('${col.id}',${s.id},'${tc.id}')" title="${tc.label}" style="background:rgba(0,0,0,.08);border:none;border-radius:5px;padding:2px 6px;font-size:10px;cursor:pointer">${tc.icon}</button>`).join('')}
+                <button onclick="stickyToTask('${col.id}',${s.id})" style="background:#2563eb;border:none;border-radius:5px;padding:2px 9px;font-size:10px;color:#fff;cursor:pointer;margin-left:auto;white-space:nowrap">→ задачу</button>
+                <button onclick="deleteSticky('${col.id}',${s.id})" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:16px;line-height:1;padding:0 2px">×</button>
+              </div>
+            </div>`).join('')}
+            <div style="margin-top:auto;padding-top:6px">
+              <input id="sticky-input-${col.id}" class="input" style="font-size:12px;background:#fff" placeholder="Новая заметка... (Enter)"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();addSticky('${col.id}')}" />
+              <button onclick="addSticky('${col.id}')" style="margin-top:5px;width:100%;background:transparent;border:1px dashed #d1d5db;border-radius:7px;padding:5px;font-size:12px;color:#94a3b8;cursor:pointer">+ добавить</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    ${allWeeks.filter(w=>w!==state.stickyWeek).length>0?`
+    <div style="margin-top:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Прошлые:</span>
+      ${allWeeks.filter(w=>w!==state.stickyWeek).slice(0,6).map(w=>{
+        const d=state.stickies[w]||{};
+        const n=Object.values(d).reduce((c,a)=>c+(a||[]).length,0);
+        return `<button onclick="state.stickyWeek='${w}';render()" style="background:#fff;border:1px solid #e5e7eb;border-radius:7px;padding:4px 10px;font-size:11px;color:#374151;cursor:pointer">${weekLabel(w)} (${n})</button>`;
+      }).join('')}
+    </div>`:''}
   </div>`;
 }
 
@@ -768,6 +863,14 @@ function renderReports() {
   const grandTotal = rows.reduce((a,r)=>a+r.total,0);
   const grandDone  = rows.reduce((a,r)=>a+r.done,0);
 
+  // Project stats
+  const projByDir = PROJ_DIRS.map(d => {
+    const dp = state.projects.filter(p => p.dir === d.id);
+    return { ...d, count:dp.length, avgPct:dp.length?Math.round(dp.reduce((s,p)=>s+p.progress,0)/dp.length*100):0,
+      risk:dp.filter(p=>p.signal==='Есть риск').length, block:dp.filter(p=>p.signal==='Блок').length };
+  });
+  const upcoming = [...state.projects].filter(p=>p.daysLeft>=0&&p.daysLeft<=45).sort((a,b)=>a.daysLeft-b.daysLeft).slice(0,6);
+
   return `
   <div class="p-6 space-y-6">
     <div class="flex items-center justify-between">
@@ -776,6 +879,43 @@ function renderReports() {
         <p class="text-gray-400 text-xs mt-0.5">Сформировано: ${new Date().toLocaleString('ru-RU')}</p>
       </div>
       <button class="btn btn-secondary" onclick="exportCSV()">⬇ Экспорт CSV</button>
+    </div>
+
+    <!-- PROJECTS SUMMARY -->
+    <div class="card p-5">
+      <h2 class="text-base font-semibold text-gray-800 mb-4">📂 Проекты по направлениям</h2>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:${upcoming.length?'16px':'0'}">
+        ${projByDir.map(d=>`
+        <div style="background:${d.bg};border-radius:10px;padding:12px">
+          <div style="font-size:16px;margin-bottom:4px">${d.icon}</div>
+          <div style="font-size:10px;font-weight:700;color:${d.color};line-height:1.3;margin-bottom:6px">${d.label}</div>
+          <div style="font-size:22px;font-weight:800;color:#0f172a">${d.avgPct}%</div>
+          <div style="background:rgba(0,0,0,.08);border-radius:999px;height:4px;margin:5px 0;overflow:hidden"><div style="height:100%;background:${d.color};width:${d.avgPct}%"></div></div>
+          <div style="font-size:10px;color:#64748b">${d.count} проект${d.count===1?'':'ов'}</div>
+          ${d.block?`<div style="font-size:9px;color:#991b1b;font-weight:700;margin-top:4px">🔴 ${d.block} блок</div>`:''}
+          ${d.risk?`<div style="font-size:9px;color:#92400e;font-weight:700;margin-top:2px">⚠️ ${d.risk} риск</div>`:''}
+        </div>`).join('')}
+      </div>
+      ${upcoming.length?`
+      <div style="border-top:1px solid #f1f5f9;padding-top:14px">
+        <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:10px">⏰ Дедлайны в ближайшие 45 дней</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          ${upcoming.map(p=>{
+            const d=PROJ_DIRS.find(x=>x.id===p.dir)||PROJ_DIRS[0];
+            const dc=p.daysLeft<=14?'#ef4444':p.daysLeft<=30?'#f59e0b':'#64748b';
+            return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f8fafc;border-radius:8px;border-left:3px solid ${dc}">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.project}</div>
+                <div style="font-size:10px;color:${d.color}">${d.label}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:13px;font-weight:700;color:${dc}">${p.daysLeft}д</div>
+                <div style="font-size:10px;color:#94a3b8">${p.deadline}</div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`:''}
     </div>
 
     <div class="card p-5">
@@ -1218,18 +1358,18 @@ function renderCreateModal() {
   const DIRS = [...new Set(TASKS.map(x=>x.dir))];
   const TYPES = [...new Set(TASKS.map(x=>x.type))];
   return `
-  <div class="modal-overlay" onclick="if(event.target===this){state.showCreateModal=false;render()}">
+  <div class="modal-overlay" onclick="if(event.target===this){state.showCreateModal=false;state.createPrefilledTitle='';state.createProjectId=null;render()}">
     <div class="modal" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e5e7eb">
         <h2 style="font-size:16px;font-weight:600">Новая задача</h2>
-        <button onclick="state.showCreateModal=false;render()" style="color:#9ca3af;font-size:22px;background:none;border:none;cursor:pointer">×</button>
+        <button onclick="state.showCreateModal=false;state.createPrefilledTitle='';state.createProjectId=null;render()" style="color:#9ca3af;font-size:22px;background:none;border:none;cursor:pointer">×</button>
       </div>
       <div style="padding:20px 24px">
         ${state.createError?`<div style="background:#fef2f2;border:1px solid #fca5a5;color:#dc2626;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:16px">${state.createError}</div>`:''}
         <div class="space-y-4">
           <div>
             <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:4px">Название *</label>
-            <input class="input" id="create-title" placeholder="Название задачи" />
+            <input class="input" id="create-title" placeholder="Название задачи" value="${(state.createPrefilledTitle||'').replace(/"/g,'&quot;')}" />
           </div>
           <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
             ${state.user.role==='head'?`
@@ -1265,8 +1405,15 @@ function renderCreateModal() {
             </div>
           </div>
         </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:4px">Привязать к проекту <span style="font-weight:400;color:#94a3b8">(необязательно)</span></label>
+          <select class="input" id="create-project">
+            <option value="">— без проекта —</option>
+            ${state.projects.map(p=>`<option value="${p.id}"${state.createProjectId===p.id?'selected':''}>${p.project}</option>`).join('')}
+          </select>
+        </div>
         <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb">
-          <button class="btn btn-secondary" onclick="state.showCreateModal=false;render()">Отмена</button>
+          <button class="btn btn-secondary" onclick="state.showCreateModal=false;state.createPrefilledTitle='';state.createProjectId=null;render()">Отмена</button>
           <button class="btn btn-primary" onclick="createTask()">Создать задачу</button>
         </div>
       </div>
@@ -1574,12 +1721,21 @@ function renderProjects() {
                 const pct=Math.round(p.progress*100);
                 const pc=pct>=70?'#22c55e':pct>=40?'#3b82f6':'#f59e0b';
                 const dc=p.daysLeft<=20?'#ef4444':p.daysLeft<=50?'#f59e0b':'#64748b';
+                const projTasks=state.tasks.filter(t=>t.projectId===p.id);
+                const isExp=!!state.projExpanded[p.id];
                 return `
-                <tr style="border-bottom:${i<dp.length-1?'1px solid #f8fafc':'none'}" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''">
+                <tr style="border-bottom:${(!isExp&&i<dp.length-1)?'1px solid #f8fafc':'none'}" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''">
                   <td style="padding:11px 16px;vertical-align:top">
-                    <div style="font-size:13px;font-weight:600;color:#0f172a;line-height:1.3">${p.project}</div>
-                    <div style="font-size:11px;color:#94a3b8;margin-top:2px">${p.stage}</div>
-                    ${p.risk?`<div style="font-size:10px;color:#dc2626;margin-top:3px;display:flex;gap:3px;align-items:flex-start"><span>⚠</span><span>${p.risk}</span></div>`:''}
+                    <div style="display:flex;align-items:flex-start;gap:4px">
+                      <button onclick="event.stopPropagation();state.projExpanded[${p.id}]=!state.projExpanded[${p.id}];render()"
+                        style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:11px;padding:2px 2px 0;flex-shrink:0;line-height:1.8;margin-top:1px">${isExp?'▼':'▶'}</button>
+                      <div>
+                        <div style="font-size:13px;font-weight:600;color:#0f172a;line-height:1.3">${p.project}</div>
+                        <div style="font-size:11px;color:#94a3b8;margin-top:2px">${p.stage}</div>
+                        ${p.risk?`<div style="font-size:10px;color:#dc2626;margin-top:3px;display:flex;gap:3px;align-items:flex-start"><span>⚠</span><span>${p.risk}</span></div>`:''}
+                        ${projTasks.length?`<div style="font-size:10px;color:#3b82f6;margin-top:3px;font-weight:600">📋 ${projTasks.length} задач${projTasks.length===1?'а':''}</div>`:''}
+                      </div>
+                    </div>
                   </td>
                   <td style="padding:11px 8px;font-size:12px;color:#374151;vertical-align:top">${p.responsible}</td>
                   <td style="padding:11px 8px;text-align:center;vertical-align:top">${priBadge(p.priority)}</td>
@@ -1594,7 +1750,24 @@ function renderProjects() {
                     <button onclick="openProjEdit(${p.id})" title="Редактировать" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:15px;padding:2px 4px">✏️</button>
                     <button onclick="deleteProjItem(${p.id})" title="Удалить" style="background:none;border:none;cursor:pointer;color:#d1d5db;font-size:14px;padding:2px 4px">🗑</button>
                   </td>
-                </tr>`;
+                </tr>
+                ${isExp?`
+                <tr style="background:#f8fafc;border-bottom:${i<dp.length-1?'1px solid #f8fafc':'none'}">
+                  <td colspan="8" style="padding:2px 16px 14px 52px">
+                    <div style="border-left:3px solid #bfdbfe;padding-left:14px">
+                      <div style="font-size:11px;font-weight:700;color:#1d4ed8;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Задачи проекта</div>
+                      ${projTasks.length>0?projTasks.map(t=>`
+                      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9">
+                        ${statusBadge(t.status)}
+                        <span style="font-size:12px;color:#0f172a;flex:1">${t.title}</span>
+                        <span style="font-size:11px;color:#94a3b8">${assigneeName(t.assignee)}</span>
+                        ${priBadge(t.priority)}
+                        <button onclick="openTask(${t.id})" style="background:none;border:1px solid #e5e7eb;border-radius:5px;padding:2px 8px;font-size:11px;cursor:pointer;color:#374151;white-space:nowrap">открыть</button>
+                      </div>`).join(''):`<div style="font-size:12px;color:#94a3b8;padding:6px 0">Задач пока нет</div>`}
+                      <button onclick="addTaskToProject(${p.id})" style="margin-top:10px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer">+ Добавить задачу к проекту</button>
+                    </div>
+                  </td>
+                </tr>`:''}`;
               }).join('')}
             </tbody>
           </table>
@@ -2312,9 +2485,12 @@ function createTask() {
     status:   'new',
     due:      document.getElementById('create-due').value || null,
     urgent:   false,
+    projectId: document.getElementById('create-project')?.value ? Number(document.getElementById('create-project').value) : null,
   });
   state.showCreateModal=false;
   state.createError='';
+  state.createPrefilledTitle='';
+  state.createProjectId=null;
   saveTasks();
   render();
 }
