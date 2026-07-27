@@ -138,7 +138,7 @@ function _bakLoad() {
   try { const b = JSON.parse(localStorage.getItem('mapap_bak') || '{}'); return b; } catch(e) { return {}; }
 }
 function _bakSave() {
-  try { localStorage.setItem('mapap_bak', JSON.stringify({tasks: state.tasks, tracks: state.tracks, kpiEntries: state.kpiEntries, projects: state.projects})); } catch(e) {}
+  try { localStorage.setItem('mapap_bak', JSON.stringify({tasks: state.tasks, tracks: state.tracks, kpiEntries: state.kpiEntries, projects: state.projects, inboxItems: state.inboxItems})); } catch(e) {}
 }
 
 async function loadFromCloud() {
@@ -150,6 +150,7 @@ async function loadFromCloud() {
     state.tracks     = data.tracks     || TRACKS.map(t=>({...t}));
     state.kpiEntries = data.kpiEntries || [];
     state.projects   = data.projects   || DEFAULT_PROJECTS.map(p=>({...p}));
+    state.inboxItems = data.inboxItems || [];
     _bakSave();
   } catch(e) {
     const bak = _bakLoad();
@@ -170,7 +171,7 @@ function saveToCloud() {
       await fetch(BLOB_URL, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ tasks: state.tasks, tracks: state.tracks, kpiEntries: state.kpiEntries, projects: state.projects })
+        body: JSON.stringify({ tasks: state.tasks, tracks: state.tracks, kpiEntries: state.kpiEntries, projects: state.projects, inboxItems: state.inboxItems })
       });
       if (dot) dot.style.background = '#22c55e';
       if (lbl) lbl.textContent = 'Синхронизировано';
@@ -192,11 +193,13 @@ function startPolling() {
       if (JSON.stringify(data.tasks)      !== JSON.stringify(state.tasks)    ||
           JSON.stringify(data.tracks)     !== JSON.stringify(state.tracks)   ||
           JSON.stringify(data.kpiEntries) !== JSON.stringify(state.kpiEntries) ||
-          JSON.stringify(data.projects)   !== JSON.stringify(state.projects)) {
+          JSON.stringify(data.projects)   !== JSON.stringify(state.projects) ||
+          JSON.stringify(data.inboxItems) !== JSON.stringify(state.inboxItems)) {
         state.tasks      = data.tasks;
         state.tracks     = data.tracks;
         state.kpiEntries = data.kpiEntries || [];
         state.projects   = data.projects   || state.projects;
+        state.inboxItems = data.inboxItems || state.inboxItems;
         _bakSave();
         render();
       }
@@ -246,6 +249,8 @@ let state = {
   stickyWeek: isoWeekKey(new Date()),
   createPrefilledTitle: '',
   createProjectId: null,
+  inboxItems: _bak.inboxItems || [],
+  inboxInput: '',
 };
 
 function getUser(id) { return USERS.find(u => u.id === id); }
@@ -446,12 +451,14 @@ function renderLogin() {
 }
 
 function renderApp() {
-  const pages = { dashboard: renderDashboard, myweek: renderMyWeek, tasks: renderTasks, kanban: renderKanban, tracks: renderTracks, projects: renderProjects, kpi: renderKPI, reports: renderReports, news: renderNewsAnalytics };
+  const pages = { dashboard: renderDashboard, inbox: renderInbox, myweek: renderMyWeek, tasks: renderTasks, kanban: renderKanban, tracks: renderTracks, projects: renderProjects, kpi: renderKPI, reports: renderReports, news: renderNewsAnalytics };
   const content = (pages[state.page] || renderDashboard)();
+  const inboxNew = state.inboxItems.filter(x => !x.done).length;
   const NAV = [
     { id:'dashboard', icon:'📊', label:'Дашборд' },
+    { id:'inbox',     icon:'📥', label: inboxNew ? `Inbox · ${inboxNew}` : 'Inbox' },
     { id:'myweek',    icon:'📅', label:'Моя неделя' },
-    { id:'tasks',     icon:'📋', label:'Задачи' },
+    { id:'tasks',     icon:'📋', label:'Мои задачи' },
     { id:'kanban',    icon:'🗒',  label:'Заметки недели' },
     { id:'tracks',    icon:'🌐', label:'Международные треки' },
     { id:'projects',  icon:'📂', label:'Реестр проектов' },
@@ -465,6 +472,18 @@ function renderApp() {
       <div class="px-5 py-4" style="border-bottom:1px solid rgba(255,255,255,.1)">
         <div class="text-lg font-bold tracking-tight">MAPAP</div>
         <div class="text-xs mt-0.5" style="color:#93c5fd">Проектный офис транспорта РК</div>
+      </div>
+      <div style="padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.1)">
+        <div style="display:flex;gap:5px">
+          <input id="inbox-quick" placeholder="Захватить мысль..." autocomplete="off"
+            style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:7px;padding:6px 9px;font-size:11px;color:#fff;outline:none;min-width:0"
+            value="${(state.inboxInput||'').replace(/"/g,'&quot;')}"
+            oninput="state.inboxInput=this.value"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();addInboxItem('quick')}"
+          />
+          <button onclick="addInboxItem('quick')" title="Добавить в Inbox"
+            style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:7px;padding:6px 10px;color:#fff;cursor:pointer;font-size:15px;flex-shrink:0;line-height:1">+</button>
+        </div>
       </div>
       <nav class="flex-1 py-4 px-2 space-y-0.5">
         ${NAV.map(n => `<div class="nav-link${state.page===n.id?' active':''}" onclick="navigate('${n.id}')"><span>${n.icon}</span><span>${n.label}</span></div>`).join('')}
@@ -1774,6 +1793,154 @@ function renderProjects() {
         </div>
       </div>`;
     }).join('')}
+  </div>`;
+}
+
+// ─── INBOX ────────────────────────────────────────────────────────────────────
+function addInboxItem(source) {
+  const text = (state.inboxInput || '').trim();
+  if (!text) return;
+  state.inboxItems.unshift({
+    id: Date.now(),
+    text,
+    createdAt: new Date().toISOString(),
+    createdBy: state.user?.name || '',
+    done: false,
+  });
+  state.inboxInput = '';
+  saveToCloud();
+  render();
+  setTimeout(() => {
+    const el = document.getElementById(source === 'quick' ? 'inbox-quick' : 'inbox-main-input');
+    if (el) { el.value = ''; el.focus(); }
+  }, 40);
+}
+
+function deleteInboxItem(id) {
+  state.inboxItems = state.inboxItems.filter(x => x.id !== id);
+  saveToCloud();
+  render();
+}
+
+function markInboxDone(id) {
+  const item = state.inboxItems.find(x => x.id === id);
+  if (item) { item.done = true; saveToCloud(); render(); }
+}
+
+function inboxToTask(id) {
+  const item = state.inboxItems.find(x => x.id === id);
+  if (!item) return;
+  state.createPrefilledTitle = item.text;
+  state.showCreateModal = true;
+  item.done = true;
+  saveToCloud();
+  render();
+}
+
+function inboxToProject(id) {
+  const item = state.inboxItems.find(x => x.id === id);
+  if (!item) return;
+  state.projModalData = {
+    id: Date.now(), dir:'routes', project: item.text, responsible:'', priority:'Средний',
+    stage:'', progress:0, deadline:'', daysLeft:0, signal:'В графике', nextStep:'', risk:'', _new:true,
+  };
+  state.showProjModal = true;
+  item.done = true;
+  saveToCloud();
+  render();
+}
+
+function renderInbox() {
+  const newItems = state.inboxItems.filter(x => !x.done);
+  const doneItems = state.inboxItems.filter(x => x.done);
+
+  const timeAgo = iso => {
+    const diff = Date.now() - new Date(iso).getTime();
+    if (diff < 60000)    return 'только что';
+    if (diff < 3600000)  return Math.floor(diff/60000) + ' мин назад';
+    if (diff < 86400000) return Math.floor(diff/3600000) + ' ч назад';
+    if (diff < 604800000) return Math.floor(diff/86400000) + ' дн назад';
+    return new Date(iso).toLocaleDateString('ru-RU');
+  };
+
+  return `
+  <div class="p-6" style="max-width:680px;margin:0 auto">
+
+    <!-- HEADER -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px">
+      <div>
+        <h1 style="font-size:22px;font-weight:700;color:#0f172a">📥 Inbox</h1>
+        <p style="font-size:12px;color:#64748b;margin-top:2px">Все мысли сначала сюда — потом разобрать одним кликом</p>
+      </div>
+      ${newItems.length > 0
+        ? `<span style="background:#fef2f2;color:#991b1b;font-size:13px;font-weight:700;padding:5px 16px;border-radius:20px">${newItems.length} не разобрано</span>`
+        : `<span style="background:#f0fdf4;color:#065f46;font-size:13px;font-weight:600;padding:5px 16px;border-radius:20px">✓ Всё разобрано</span>`}
+    </div>
+
+    <!-- CAPTURE -->
+    <div class="card p-4" style="margin-bottom:20px">
+      <div style="display:flex;gap:8px">
+        <input class="input" id="inbox-main-input" autocomplete="off"
+          placeholder="Записать мысль, идею, вопрос, поручение... (Enter)"
+          value="${(state.inboxInput||'').replace(/"/g,'&quot;')}"
+          oninput="state.inboxInput=this.value"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();addInboxItem('main')}" />
+        <button onclick="addInboxItem('main')" class="btn btn-primary" style="flex-shrink:0">Добавить</button>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:8px">Также можно использовать поле в боковом меню — доступно с любой страницы</div>
+    </div>
+
+    <!-- NEW ITEMS -->
+    ${newItems.length === 0 ? `
+    <div class="card" style="padding:48px 24px;text-align:center;margin-bottom:20px">
+      <div style="font-size:40px;margin-bottom:12px">📭</div>
+      <div style="font-size:15px;font-weight:600;color:#475569;margin-bottom:6px">Inbox пуст</div>
+      <div style="font-size:13px;color:#94a3b8">Используйте поле выше или поле «Захватить мысль» в боковом меню</div>
+    </div>` : `
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px">
+      ${newItems.map(item => `
+      <div class="card" style="padding:14px 18px;border-left:3px solid #3b82f6">
+        <div style="font-size:14px;color:#0f172a;line-height:1.55;margin-bottom:12px;word-break:break-word">${item.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div style="font-size:11px;color:#94a3b8">${item.createdBy ? item.createdBy + ' · ' : ''}${timeAgo(item.createdAt)}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button onclick="inboxToTask(${item.id})"
+              style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:7px;padding:5px 13px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
+              → Задача
+            </button>
+            <button onclick="inboxToProject(${item.id})"
+              style="background:#f5f3ff;border:1px solid #ddd6fe;color:#5b21b6;border-radius:7px;padding:5px 13px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
+              → Проект
+            </button>
+            <button onclick="markInboxDone(${item.id})"
+              style="background:#f0fdf4;border:1px solid #bbf7d0;color:#065f46;border-radius:7px;padding:5px 13px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
+              ✓ Готово
+            </button>
+            <button onclick="deleteInboxItem(${item.id})"
+              style="background:none;border:1px solid #fca5a5;color:#ef4444;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer">
+              🗑
+            </button>
+          </div>
+        </div>
+      </div>`).join('')}
+    </div>`}
+
+    <!-- PROCESSED -->
+    ${doneItems.length > 0 ? `
+    <details>
+      <summary style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.07em;cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;margin-bottom:10px">
+        <span>▶</span><span>Обработано (${doneItems.length})</span>
+      </summary>
+      <div style="display:flex;flex-direction:column;gap:5px;margin-top:10px">
+        ${doneItems.slice(0, 30).map(item => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:#f9fafb;border-radius:8px;border:1px solid #f1f5f9">
+          <span style="font-size:12px;color:#94a3b8;flex:1;text-decoration:line-through;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.text.replace(/</g,'&lt;')}</span>
+          <span style="font-size:10px;color:#cbd5e1;white-space:nowrap;flex-shrink:0">${timeAgo(item.createdAt)}</span>
+          <button onclick="deleteInboxItem(${item.id})" style="background:none;border:none;color:#e5e7eb;cursor:pointer;font-size:13px;padding:0;flex-shrink:0">🗑</button>
+        </div>`).join('')}
+        ${doneItems.length > 30 ? `<div style="font-size:11px;color:#94a3b8;text-align:center;padding:8px">... и ещё ${doneItems.length - 30}</div>` : ''}
+      </div>
+    </details>` : ''}
   </div>`;
 }
 
