@@ -527,12 +527,55 @@ function renderDashboard() {
     { label:'Просрочено',       val:overdue.length,icon:'⏰', cls:overdue.length?'bg-red-50 text-red-700':'bg-green-50 text-green-700' },
   ];
 
+  const pinned = state.projects.filter(p => p.pinned);
+  const sigColor = s => s === 'Блок' ? '#ef4444' : s === 'Есть риск' ? '#f59e0b' : '#22c55e';
+  const sigLabel = s => s === 'Блок' ? '🔴 Блок' : s === 'Есть риск' ? '🟡 Риск' : '🟢 В графике';
+
   return `
   <div class="p-6 space-y-6">
     <div>
       <h1 class="text-2xl font-bold text-gray-900">Дашборд</h1>
-      <p class="text-gray-500 text-sm mt-0.5">Проектный офис по транспорту и логистике РК • 24 мая 2026</p>
+      <p class="text-gray-500 text-sm mt-0.5">Проектный офис по транспорту и логистике РК</p>
     </div>
+
+    ${pinned.length > 0 ? `
+    <div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:15px;font-weight:700;color:#0f172a">⭐ Приоритетные проекты</span>
+        <span style="font-size:11px;color:#94a3b8">${pinned.length} проект${pinned.length===1?'':'ов'} на контроле</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">
+        ${pinned.map(p => {
+          const pct = Math.round(p.progress * 100);
+          const pc = pct >= 70 ? '#22c55e' : pct >= 40 ? '#3b82f6' : '#f59e0b';
+          const dirInfo = PROJ_DIRS.find(d => d.id === p.dir) || { color:'#475569', bg:'#f1f5f9', icon:'📁' };
+          return `
+          <div class="card" style="padding:14px 16px;border-left:4px solid ${sigColor(p.signal)};cursor:pointer" onclick="navigate('projects')">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:10px">
+              <div style="font-size:13px;font-weight:700;color:#0f172a;line-height:1.35">${p.project}</div>
+              <button onclick="event.stopPropagation();toggleProjPin(${p.id})" title="Убрать из приоритетных"
+                style="background:none;border:none;cursor:pointer;font-size:14px;padding:0;flex-shrink:0;opacity:.6" title="снять">✕</button>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <span style="font-size:10px;background:${dirInfo.bg};color:${dirInfo.color};padding:2px 7px;border-radius:10px;font-weight:600">${dirInfo.icon} ${dirInfo.label||p.dir}</span>
+              <span style="font-size:10px;font-weight:700;color:${sigColor(p.signal)}">${sigLabel(p.signal)}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
+              <div style="flex:1;background:#e5e7eb;border-radius:999px;height:6px;overflow:hidden">
+                <div style="height:100%;background:${pc};border-radius:999px;width:${pct}%"></div>
+              </div>
+              <span style="font-size:11px;font-weight:700;color:#374151">${pct}%</span>
+            </div>
+            ${p.nextStep ? `<div style="font-size:11px;color:#64748b;line-height:1.4">→ ${p.nextStep}</div>` : ''}
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+              <span style="font-size:10px;color:#94a3b8">${p.responsible}</span>
+              ${p.deadline ? `<span style="font-size:10px;color:${p.daysLeft<=20?'#ef4444':p.daysLeft<=50?'#f59e0b':'#94a3b8'};font-weight:600">${p.deadline} · ${p.daysLeft}д</span>` : ''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : ''}
+
 
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
       ${kpiCards.map(c=>`
@@ -1766,6 +1809,9 @@ function renderProjects() {
                   <td style="padding:11px 8px;vertical-align:top">${sigBadge(p.signal)}</td>
                   <td style="padding:11px 8px;font-size:11px;color:#475569;vertical-align:top;line-height:1.5">${p.nextStep}</td>
                   <td style="padding:11px 8px;vertical-align:top;white-space:nowrap">
+                    <button onclick="toggleProjPin(${p.id})" title="${p.pinned?'Убрать из приоритетных':'Добавить в приоритетные'}"
+                      style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;opacity:${p.pinned?'1':'0.25'};transition:opacity .15s"
+                      onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='${p.pinned?'1':'0.25'}'">⭐</button>
                     <button onclick="openProjEdit(${p.id})" title="Редактировать" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:15px;padding:2px 4px">✏️</button>
                     <button onclick="deleteProjItem(${p.id})" title="Удалить" style="background:none;border:none;cursor:pointer;color:#d1d5db;font-size:14px;padding:2px 4px">🗑</button>
                   </td>
@@ -2153,6 +2199,14 @@ function renderMyWeek() {
 }
 
 // ─── PROJECT MODAL ────────────────────────────────────────────────────────────
+function toggleProjPin(id) {
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  p.pinned = !p.pinned;
+  saveToCloud();
+  render();
+}
+
 function openProjEdit(id) {
   const p = state.projects.find(x=>x.id===id);
   if (!p) return;
