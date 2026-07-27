@@ -230,6 +230,8 @@ let state = {
   showUploadModal: false,
   uploadForm: { text:'', source:'', date:'', geo:'both', previewCount:0 },
   newsFilter: { tag:'', geo:'', search:'', batch:'' },
+  projFilter: { dir:'', signal:'', search:'' },
+  projExpanded: {},
 };
 
 function getUser(id) { return USERS.find(u => u.id === id); }
@@ -313,6 +315,54 @@ const KPI = {
   },
 };
 
+// ─── PROJECT REGISTRY (из Реестр_проектов.xlsx, 22.07.2026) ─────────────────
+const PROJ_DIRS = [
+  { id:'routes',   label:'Стратегические маршруты', icon:'🛣️',  color:'#1d4ed8', bg:'#dbeafe' },
+  { id:'avia',     label:'Авиация и аэропорты',      icon:'✈️',  color:'#b45309', bg:'#fef3c7' },
+  { id:'maritime', label:'Морская и ЖД логистика',   icon:'🚢',  color:'#6d28d9', bg:'#ede9fe' },
+  { id:'digital',  label:'Цифровизация и ИТ',        icon:'💻',  color:'#0369a1', bg:'#e0f2fe' },
+  { id:'legal',    label:'Регуляторика и фонды',     icon:'📋',  color:'#065f46', bg:'#d1fae5' },
+];
+const PROJECTS = [
+  // Стратегические маршруты
+  {id:1,  dir:'routes',   project:'Global Gateway',                      responsible:'Алтынай',       priority:'Высокий', stage:'Три проекта в работе',                  progress:0.30, deadline:'30.09.2026', daysLeft:65,  signal:'В графике', nextStep:'Проработка остальных проектов',          risk:''},
+  {id:2,  dir:'routes',   project:'Шанхай порт — развитие порта Актау',  responsible:'Алуа',          priority:'Высокий', stage:'Проектирование / ТЭО',                  progress:0.25, deadline:'15.10.2026', daysLeft:80,  signal:'В графике', nextStep:'Согласование меморандума',               risk:''},
+  {id:3,  dir:'routes',   project:'Guoyou materials (порт Курык)',        responsible:'—',             priority:'Средний', stage:'Первичный контакт',                     progress:0.15, deadline:'01.11.2026', daysLeft:97,  signal:'В графике', nextStep:'Встреча с рабочей группой',              risk:''},
+  {id:4,  dir:'routes',   project:'TRIPP',                                responsible:'Алуа',          priority:'Высокий', stage:'Анализ эффективности',                  progress:0.40, deadline:'31.08.2026', daysLeft:35,  signal:'Есть риск', nextStep:'Сбор данных по объёмам',                risk:''},
+  {id:5,  dir:'routes',   project:'Трансафганская дорога',                responsible:'Алуа',          priority:'Высокий', stage:'Разработка концепции',                  progress:0.20, deadline:'20.12.2026', daysLeft:146, signal:'Блок',      nextStep:'Согласование безопасности маршрута',     risk:'Безопасность маршрута'},
+  // Авиация и аэропорты
+  {id:6,  dir:'avia',     project:'Авиакеросин (аудит перевалки)',        responsible:'Арай',          priority:'Высокий', stage:'Согласование контракта',                progress:0.60, deadline:'15.08.2026', daysLeft:19,  signal:'В графике', nextStep:'Финальная сверка объёмов поставок',      risk:''},
+  {id:7,  dir:'avia',     project:'План Air Astana',                      responsible:'Аиша',          priority:'Высокий', stage:'Интеграция графиков',                   progress:0.50, deadline:'01.09.2026', daysLeft:36,  signal:'В графике', nextStep:'Согласование слотов',                    risk:''},
+  {id:8,  dir:'avia',     project:'Cargo склад аэропорт',                 responsible:'Канат',         priority:'Высокий', stage:'Согласование ТЗ',                       progress:0.15, deadline:'30.10.2026', daysLeft:95,  signal:'В графике', nextStep:'Утверждение схемы зон хранения',         risk:''},
+  {id:9,  dir:'avia',     project:'План развития аэропорта Алматы',       responsible:'Аиша',          priority:'Высокий', stage:'Мастер-планирование',                   progress:0.30, deadline:'15.11.2026', daysLeft:111, signal:'Есть риск', nextStep:'Сбор данных по пассажиропотоку',         risk:'Задержка от смежных отделов'},
+  {id:10, dir:'avia',     project:'Актау аэропорт',                       responsible:'Аиша',          priority:'Средний', stage:'Анализ инфраструктуры',                 progress:0.40, deadline:'25.09.2026', daysLeft:60,  signal:'В графике', nextStep:'Подготовка промежуточного отчёта',       risk:''},
+  {id:11, dir:'avia',     project:'Авиатопливо',                          responsible:'Арай',          priority:'Высокий', stage:'Мониторинг цен и запасов',              progress:0.70, deadline:'10.08.2026', daysLeft:14,  signal:'В графике', nextStep:'Подписание договора купли-продажи',       risk:''},
+  {id:12, dir:'avia',     project:'Прямые рейсы',                         responsible:'Азамат',        priority:'Средний', stage:'Проработка новых направлений',           progress:0.35, deadline:'05.10.2026', daysLeft:70,  signal:'В графике', nextStep:'Согласование межправсоглашений',          risk:''},
+  // Морская и ЖД логистика
+  {id:13, dir:'maritime', project:'YTO',                                  responsible:'Алуа',          priority:'Средний', stage:'Переговоры по тарифам',                 progress:0.45, deadline:'20.08.2026', daysLeft:24,  signal:'В графике', nextStep:'Согласование коммерческих условий',      risk:''},
+  {id:14, dir:'maritime', project:'Inditex',                              responsible:'Ажар',          priority:'Высокий', stage:'Тестовая перевозка',                    progress:0.80, deadline:'10.08.2026', daysLeft:14,  signal:'В графике', nextStep:'Анализ сроков доставки',                 risk:''},
+  {id:15, dir:'maritime', project:'DB Cargo',                             responsible:'Алуа',          priority:'Средний', stage:'Формирование расписания',               progress:0.50, deadline:'15.09.2026', daysLeft:50,  signal:'В графике', nextStep:'Подписание протокола намерений',          risk:''},
+  {id:16, dir:'maritime', project:'MSC',                                  responsible:'Алуа',          priority:'Высокий', stage:'Согласование контейнерного парка',       progress:0.65, deadline:'25.08.2026', daysLeft:29,  signal:'В графике', nextStep:'Утверждение объёмов',                    risk:''},
+  {id:17, dir:'maritime', project:'Damen',                                responsible:'Алтынай, Канат',priority:'Средний', stage:'Технический аудит',                     progress:0.30, deadline:'30.10.2026', daysLeft:95,  signal:'В графике', nextStep:'Подготовка ТЗ на суда',                  risk:''},
+  {id:18, dir:'maritime', project:'Maersk',                               responsible:'Ажар',          priority:'Высокий', stage:'Интеграция сервисов',                   progress:0.55, deadline:'05.09.2026', daysLeft:40,  signal:'В графике', nextStep:'Согласование графика заходов',            risk:''},
+  {id:19, dir:'maritime', project:'Pacific Airlines',                     responsible:'Аиша',          priority:'Низкий',  stage:'Первичный анализ',                      progress:0.20, deadline:'20.11.2026', daysLeft:116, signal:'В графике', nextStep:'Запрос базовых ставок',                  risk:''},
+  {id:20, dir:'maritime', project:'Cathay Pacific',                       responsible:'Аиша',          priority:'Средний', stage:'Проработка логистических схем',          progress:0.40, deadline:'15.09.2026', daysLeft:50,  signal:'В графике', nextStep:'Согласование грузовой программы',         risk:''},
+  {id:21, dir:'maritime', project:'TOS',                                  responsible:'Алуа',          priority:'Низкий',  stage:'Сбор информации',                       progress:0.15, deadline:'01.12.2026', daysLeft:127, signal:'В графике', nextStep:'Подготовка аналитической записки',       risk:''},
+  {id:22, dir:'maritime', project:'Sarens',                               responsible:'Алуа',          priority:'Средний', stage:'Переговоры по спецтехнике',             progress:0.50, deadline:'10.09.2026', daysLeft:45,  signal:'В графике', nextStep:'Согласование коммерческого предложения', risk:''},
+  {id:23, dir:'maritime', project:'Узкоколейка',                          responsible:'Алуа',          priority:'Средний', stage:'ПредТЭО / Проектирование',              progress:0.20, deadline:'30.11.2026', daysLeft:126, signal:'Есть риск', nextStep:'Расчёт капитальных затрат',              risk:'Нехватка вводных данных'},
+  // Цифровизация и ИТ
+  {id:24, dir:'digital',  project:'Смарт Карго',                          responsible:'Гульзара',      priority:'Средний', stage:'Доработка функционала ПО',              progress:0.50, deadline:'15.09.2026', daysLeft:50,  signal:'В графике', nextStep:'Интеграция с трекинг-системой',           risk:''},
+  {id:25, dir:'digital',  project:'Nuctech',                              responsible:'Алтынай',       priority:'Средний', stage:'Поставка / Монтаж оборудования',        progress:0.25, deadline:'20.10.2026', daysLeft:85,  signal:'Есть риск', nextStep:'Согласование мест установки сканеров',   risk:'Задержка поставки комплектующих'},
+  {id:26, dir:'digital',  project:'Transinfo',                            responsible:'Алтынай',       priority:'Низкий',  stage:'Подключение к базе данных',             progress:0.70, deadline:'01.09.2026', daysLeft:36,  signal:'В графике', nextStep:'Финальная сверка данных',                risk:''},
+  {id:27, dir:'digital',  project:'Fiata (e-TIR, e-CMR)',                 responsible:'Еркебулан',     priority:'Высокий', stage:'Пилотный запуск',                       progress:0.60, deadline:'31.08.2026', daysLeft:35,  signal:'В графике', nextStep:'Тестовая отправка документа',             risk:''},
+  {id:28, dir:'digital',  project:'Интеграция Китай',                     responsible:'Гульзара',      priority:'Высокий', stage:'Тестирование API',                       progress:0.45, deadline:'15.09.2026', daysLeft:50,  signal:'Блок',      nextStep:'Настройка протоколов обмена',             risk:'Ждём доступ к API КНР'},
+  {id:29, dir:'digital',  project:'ИИ модель по транспорту и логистике',  responsible:'Алуа',          priority:'Высокий', stage:'Тестирование MVP / алгоритмов',          progress:0.35, deadline:'30.10.2026', daysLeft:95,  signal:'В графике', nextStep:'Валидация обучающей выборки',             risk:''},
+  // Регуляторика и фонды
+  {id:30, dir:'legal',    project:'Фонд Middle Corridor',                 responsible:'Алуа',          priority:'Высокий', stage:'Структурирование фонда',                progress:0.20, deadline:'15.11.2026', daysLeft:111, signal:'Есть риск', nextStep:'Согласование долей участников',           risk:'Разногласия по структуре управления'},
+  {id:31, dir:'legal',    project:'Транспортный кодекс',                  responsible:'Канат',         priority:'Высокий', stage:'Юридическая экспертиза',                progress:0.40, deadline:'31.10.2026', daysLeft:96,  signal:'Блок',      nextStep:'Внесение правок рабочей группы',          risk:'Задержка согласования с госорганами'},
+  {id:32, dir:'legal',    project:'ИБР + АСИ',                            responsible:'Еркебулан',     priority:'Средний', stage:'Подготовка заявки на финансирование',   progress:0.30, deadline:'20.09.2026', daysLeft:55,  signal:'В графике', nextStep:'Сбор пакета документов',                 risk:''},
+];
+
 // ─── RENDER HELPERS ───────────────────────────────────────────────────────────
 const STATUS_CFG = {
   new:         { label:'Новая',           cls:'bg-gray-100 text-gray-700' },
@@ -379,13 +429,14 @@ function renderLogin() {
 }
 
 function renderApp() {
-  const pages = { dashboard: renderDashboard, tasks: renderTasks, kanban: renderKanban, tracks: renderTracks, kpi: renderKPI, reports: renderReports, news: renderNewsAnalytics };
+  const pages = { dashboard: renderDashboard, tasks: renderTasks, kanban: renderKanban, tracks: renderTracks, kpi: renderKPI, reports: renderReports, news: renderNewsAnalytics, projects: renderProjects };
   const content = (pages[state.page] || renderDashboard)();
   const NAV = [
     { id:'dashboard', icon:'📊', label:'Дашборд' },
     { id:'tasks',     icon:'📋', label:'Задачи' },
     { id:'kanban',    icon:'🗂',  label:'Канбан' },
     { id:'tracks',    icon:'🌐', label:'Международные треки' },
+    { id:'projects',  icon:'📂', label:'Реестр проектов' },
     { id:'kpi',       icon:'🎯', label:'KPI мониторинг' },
     { id:'reports',   icon:'📈', label:'Отчёты' },
     { id:'news',      icon:'📰', label:'Аналитика новостей' },
@@ -1365,6 +1416,170 @@ function loadNews() {
       <div style="font-size:11px;color:#94a3b8">📎 ${n.source}</div>
     </div>`;
   }).join('');
+}
+
+// ─── PROJECTS PAGE ────────────────────────────────────────────────────────────
+function renderProjects() {
+  const f = state.projFilter;
+
+  const total    = PROJECTS.length;
+  const avgPct   = Math.round(PROJECTS.reduce((s,p)=>s+p.progress,0)/total*100);
+  const nOk      = PROJECTS.filter(p=>p.signal==='В графике').length;
+  const nRisk    = PROJECTS.filter(p=>p.signal==='Есть риск').length;
+  const nBlock   = PROJECTS.filter(p=>p.signal==='Блок').length;
+
+  let filtered = PROJECTS;
+  if (f.dir)    filtered = filtered.filter(p=>p.dir===f.dir);
+  if (f.signal) filtered = filtered.filter(p=>p.signal===f.signal);
+  if (f.search) { const q=f.search.toLowerCase(); filtered=filtered.filter(p=>(p.project+p.responsible+p.stage).toLowerCase().includes(q)); }
+
+  const sigBadge = s => {
+    const m = {'В графике':['#f0fdf4','#166534','#22c55e','✓'],
+               'Есть риск':['#fffbeb','#92400e','#f59e0b','⚠'],
+               'Блок':     ['#fef2f2','#991b1b','#ef4444','✕']};
+    const [bg,fg,dot,ic]=m[s]||m['В графике'];
+    return `<span style="display:inline-flex;align-items:center;gap:4px;background:${bg};color:${fg};font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px"><span style="width:6px;height:6px;border-radius:50%;background:${dot}"></span>${s}</span>`;
+  };
+  const priBadge = p => {
+    const m={'Высокий':['#fef2f2','#dc2626'],'Средний':['#fffbeb','#d97706'],'Низкий':['#f0fdf4','#16a34a']};
+    const [bg,fg]=m[p]||['#f1f5f9','#475569'];
+    return `<span style="background:${bg};color:${fg};font-size:10px;font-weight:600;padding:1px 7px;border-radius:4px">${p}</span>`;
+  };
+  const progBar = (pct, color) => `
+    <div style="display:flex;align-items:center;gap:7px">
+      <div style="flex:1;background:#e5e7eb;border-radius:999px;height:7px;overflow:hidden;min-width:70px">
+        <div style="height:100%;background:${color};border-radius:999px;width:${pct}%"></div>
+      </div>
+      <span style="font-size:11px;font-weight:600;color:#374151;width:28px;text-align:right">${pct}%</span>
+    </div>`;
+
+  const dirsToShow = f.dir ? PROJ_DIRS.filter(d=>d.id===f.dir) : PROJ_DIRS;
+
+  return `
+  <div class="p-6" style="max-width:1100px;margin:0 auto">
+
+    <!-- HEADER -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h1 style="font-size:22px;font-weight:700;color:#0f172a">📂 Реестр проектов</h1>
+        <div style="font-size:12px;color:#64748b;margin-top:2px">Управленческий трекер · 5 направлений · Обновлено 22.07.2026</div>
+      </div>
+    </div>
+
+    <!-- TOP STATS -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px">
+      <div class="card p-4" style="text-align:center">
+        <div style="font-size:26px;font-weight:800;color:#1d4ed8">${total}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">Всего проектов</div>
+      </div>
+      <div class="card p-4" style="text-align:center">
+        <div style="font-size:26px;font-weight:800;color:#0369a1">${avgPct}%</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">Средний прогресс</div>
+        <div style="background:#e5e7eb;border-radius:999px;height:5px;margin-top:6px;overflow:hidden"><div style="height:100%;background:#0369a1;width:${avgPct}%"></div></div>
+      </div>
+      <div class="card p-4" style="text-align:center;cursor:pointer;border:2px solid ${f.signal==='В графике'?'#22c55e':'transparent'}" onclick="state.projFilter.signal=state.projFilter.signal==='В графике'?'':'В графике';render()">
+        <div style="font-size:26px;font-weight:800;color:#16a34a">${nOk}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">🟢 В графике</div>
+      </div>
+      <div class="card p-4" style="text-align:center;cursor:pointer;border:2px solid ${f.signal==='Есть риск'?'#f59e0b':'transparent'}" onclick="state.projFilter.signal=state.projFilter.signal==='Есть риск'?'':'Есть риск';render()">
+        <div style="font-size:26px;font-weight:800;color:#d97706">${nRisk}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">🟡 Есть риск</div>
+      </div>
+      <div class="card p-4" style="text-align:center;cursor:pointer;border:2px solid ${f.signal==='Блок'?'#ef4444':'transparent'}" onclick="state.projFilter.signal=state.projFilter.signal==='Блок'?'':'Блок';render()">
+        <div style="font-size:26px;font-weight:800;color:#dc2626">${nBlock}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">🔴 Блок / стоп</div>
+      </div>
+    </div>
+
+    <!-- DIRECTION CARDS (clickable filter) -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px">
+      ${PROJ_DIRS.map(d=>{
+        const dp=PROJECTS.filter(p=>p.dir===d.id);
+        const da=Math.round(dp.reduce((s,p)=>s+p.progress,0)/dp.length*100);
+        const dr=dp.filter(p=>p.signal==='Есть риск').length;
+        const db=dp.filter(p=>p.signal==='Блок').length;
+        const isActive=f.dir===d.id;
+        return `<div class="card p-3" style="cursor:pointer;border:2px solid ${isActive?d.color:'transparent'};transition:all .15s" onclick="state.projFilter.dir=state.projFilter.dir==='${d.id}'?'':'${d.id}';render()">
+          <div style="font-size:20px;margin-bottom:4px">${d.icon}</div>
+          <div style="font-size:10px;font-weight:700;color:${d.color};line-height:1.3;margin-bottom:6px">${d.label}</div>
+          <div style="font-size:20px;font-weight:800;color:#0f172a">${da}%</div>
+          <div style="background:#e5e7eb;border-radius:999px;height:4px;margin:4px 0 6px;overflow:hidden"><div style="height:100%;background:${d.color};width:${da}%"></div></div>
+          <div style="font-size:10px;color:#64748b">${dp.length} проектов</div>
+          <div style="display:flex;gap:3px;margin-top:5px;flex-wrap:wrap">
+            ${db?`<span style="font-size:9px;background:#fef2f2;color:#991b1b;padding:1px 5px;border-radius:10px;font-weight:600">🔴 ${db} блок</span>`:''}
+            ${dr?`<span style="font-size:9px;background:#fffbeb;color:#92400e;padding:1px 5px;border-radius:10px;font-weight:600">⚠️ ${dr} риск</span>`:''}
+            ${!dr&&!db?`<span style="font-size:9px;background:#f0fdf4;color:#166534;padding:1px 5px;border-radius:10px;font-weight:600">✓ ок</span>`:''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- FILTER BAR -->
+    <div class="card p-3" style="margin-bottom:16px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input class="input" style="width:210px" placeholder="🔍 Поиск проекта..." value="${f.search||''}" oninput="state.projFilter.search=this.value;render()" />
+        ${(f.dir||f.signal||f.search)?`<button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="state.projFilter={dir:'',signal:'',search:''};render()">✕ Сбросить фильтры</button>`:''}
+        <span style="font-size:12px;color:#94a3b8;margin-left:auto">${filtered.length} из ${total} проектов</span>
+      </div>
+    </div>
+
+    <!-- PROJECT TABLES BY DIRECTION -->
+    ${dirsToShow.map(d=>{
+      const dp=filtered.filter(p=>p.dir===d.id);
+      if(!dp.length) return '';
+      return `
+      <div style="margin-bottom:22px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:6px;background:${d.bg};border-radius:8px;padding:7px 14px;flex:1">
+            <span style="font-size:16px">${d.icon}</span>
+            <span style="font-size:13px;font-weight:700;color:${d.color}">${d.label}</span>
+            <span style="font-size:11px;color:${d.color};opacity:.65;margin-left:4px">${dp.length} проект${dp.length===1?'':'ов'}</span>
+            <span style="margin-left:auto;font-size:12px;font-weight:700;color:${d.color}">${Math.round(dp.reduce((s,p)=>s+p.progress,0)/dp.length*100)}% avg</span>
+          </div>
+        </div>
+        <div class="card" style="overflow:hidden">
+          <table style="width:100%;border-collapse:collapse">
+            <thead>
+              <tr style="border-bottom:1px solid #f1f5f9">
+                <th style="text-align:left;padding:9px 16px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;width:28%">Проект</th>
+                <th style="text-align:left;padding:9px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;width:11%">Отв-й</th>
+                <th style="text-align:center;padding:9px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;width:9%">Приор.</th>
+                <th style="text-align:left;padding:9px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;width:16%">Прогресс</th>
+                <th style="text-align:left;padding:9px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;width:11%">Срок</th>
+                <th style="text-align:left;padding:9px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;width:13%">Сигнал</th>
+                <th style="text-align:left;padding:9px 16px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Следующий шаг</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${dp.map((p,i)=>{
+                const pct=Math.round(p.progress*100);
+                const pc=pct>=70?'#22c55e':pct>=40?'#3b82f6':'#f59e0b';
+                const dc=p.daysLeft<=20?'#ef4444':p.daysLeft<=50?'#f59e0b':'#64748b';
+                const isExp=state.projExpanded[p.id];
+                return `
+                <tr style="border-bottom:${i<dp.length-1?'1px solid #f8fafc':'none'}" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''">
+                  <td style="padding:11px 16px;vertical-align:top">
+                    <div style="font-size:13px;font-weight:600;color:#0f172a;line-height:1.3">${p.project}</div>
+                    <div style="font-size:11px;color:#94a3b8;margin-top:2px">${p.stage}</div>
+                    ${p.risk?`<div style="font-size:10px;color:#dc2626;margin-top:3px;display:flex;gap:3px;align-items:flex-start"><span>⚠</span><span>${p.risk}</span></div>`:''}
+                  </td>
+                  <td style="padding:11px 8px;font-size:12px;color:#374151;vertical-align:top">${p.responsible}</td>
+                  <td style="padding:11px 8px;text-align:center;vertical-align:top">${priBadge(p.priority)}</td>
+                  <td style="padding:11px 8px;vertical-align:top">${progBar(pct,pc)}</td>
+                  <td style="padding:11px 8px;vertical-align:top;white-space:nowrap">
+                    <div style="font-size:12px;color:#374151">${p.deadline}</div>
+                    <div style="font-size:10px;font-weight:700;color:${dc}">${p.daysLeft}д</div>
+                  </td>
+                  <td style="padding:11px 8px;vertical-align:top">${sigBadge(p.signal)}</td>
+                  <td style="padding:11px 16px;font-size:11px;color:#475569;vertical-align:top;line-height:1.5">${p.nextStep}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 // ─── NEWS ANALYTICS ───────────────────────────────────────────────────────────
