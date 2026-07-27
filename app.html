@@ -226,6 +226,10 @@ let state = {
   kpiEntries: _bak.kpiEntries || [],
   showKPIModal: false,
   kpiForm: { direction:'rail', metric:'transit', year:2026, periodType:'h', period:'1', value:'', unit:'млн т' },
+  newsItems: JSON.parse(localStorage.getItem('mapap_news')||'[]'),
+  showUploadModal: false,
+  uploadForm: { text:'', source:'', date:'', geo:'both', previewCount:0 },
+  newsFilter: { tag:'', geo:'', search:'', batch:'' },
 };
 
 function getUser(id) { return USERS.find(u => u.id === id); }
@@ -375,7 +379,7 @@ function renderLogin() {
 }
 
 function renderApp() {
-  const pages = { dashboard: renderDashboard, tasks: renderTasks, kanban: renderKanban, tracks: renderTracks, kpi: renderKPI, reports: renderReports };
+  const pages = { dashboard: renderDashboard, tasks: renderTasks, kanban: renderKanban, tracks: renderTracks, kpi: renderKPI, reports: renderReports, news: renderNewsAnalytics };
   const content = (pages[state.page] || renderDashboard)();
   const NAV = [
     { id:'dashboard', icon:'📊', label:'Дашборд' },
@@ -384,6 +388,7 @@ function renderApp() {
     { id:'tracks',    icon:'🌐', label:'Международные треки' },
     { id:'kpi',       icon:'🎯', label:'KPI мониторинг' },
     { id:'reports',   icon:'📈', label:'Отчёты' },
+    { id:'news',      icon:'📰', label:'Аналитика новостей' },
   ];
   return `
   <div class="flex h-screen overflow-hidden">
@@ -414,7 +419,8 @@ function renderApp() {
   </div>
   ${state.modal ? renderTaskModal() : ''}
   ${state.showCreateModal ? renderCreateModal() : ''}
-  ${state.showKPIModal ? renderKPIModal() : ''}`;
+  ${state.showKPIModal ? renderKPIModal() : ''}
+  ${state.showUploadModal ? renderUploadModal() : ''}`;
 }
 
 function renderDashboard() {
@@ -1359,6 +1365,275 @@ function loadNews() {
       <div style="font-size:11px;color:#94a3b8">📎 ${n.source}</div>
     </div>`;
   }).join('');
+}
+
+// ─── NEWS ANALYTICS ───────────────────────────────────────────────────────────
+const NEWS_TAG_RULES = [
+  { tag:'avia',    label:'Авиация',      color:'#fef3c7', fg:'#b45309', words:['авиа','airline','airport','рейс','аэропорт','air cargo','cargo terminal','самолет','самолёт','авиакомпан','freight airline','cargo flight','воздушн','борт'] },
+  { tag:'rail',    label:'Ж/д',          color:'#ede9fe', fg:'#6d28d9', words:['ж/д','жд','железнодорожн','ктж','railway','rail ','поезд','вагон','хоргос','достык','тмтм','tmtm','locomotive','freight train','ж.д.','локомотив','konteyner'] },
+  { tag:'auto',    label:'Авто',         color:'#d1fae5', fg:'#065f46', words:['авто','грузовик','tir ','тир ','автомобильн','truck','road transport','iru','иру','шоссе','автодорог','фура','перевозчик','дальнобой'] },
+  { tag:'drone',   label:'Беспилотники', color:'#fce7f3', fg:'#9d174d', words:['беспилотн','uav','дрон','бпла','unmanned','uas','коптер'] },
+  { tag:'customs', label:'Таможня',      color:'#ffedd5', fg:'#9a3412', words:['таможен','customs','досмотр','граница','кпп','пограничн','декларац','фитосанитар','карантин'] },
+  { tag:'general', label:'Общее',        color:'#e0f2fe', fg:'#0369a1', words:[] },
+];
+const NEWS_GEO_KZ = ['казахстан','алматы','астана','актау','достык','хоргос','шымкент','актобе','нур-султан','нурсултан','семей','атырау','павлодар','костанай','тараз','кызылорда','балхаш','экибастуз','петропавловск','туркестан'];
+
+function autoTagNews(text) {
+  const lc = text.toLowerCase();
+  const tags = NEWS_TAG_RULES.filter(r => r.words.length && r.words.some(w => lc.includes(w))).map(r => r.tag);
+  return tags.length ? tags : ['general'];
+}
+
+function autoGeoNews(text, override) {
+  if (override !== 'both') return override;
+  const lc = text.toLowerCase();
+  return NEWS_GEO_KZ.some(w => lc.includes(w)) ? 'kz' : 'world';
+}
+
+function parseNewsText(rawText, meta) {
+  let items = rawText.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length >= 15);
+  if (!items.length) items = rawText.split('\n').map(l => l.trim()).filter(l => l.length >= 15);
+  return items.map((p, i) => {
+    const lines = p.split('\n').map(l => l.trim()).filter(l => l.length);
+    const hasTitle = lines.length > 1 && lines[0].length < 200;
+    const title = (hasTitle ? lines[0] : p.substring(0, 150)).replace(/^\d+[\.\)\-]\s*/, '').trim();
+    const body  = hasTitle ? lines.slice(1).join(' ').trim() : '';
+    const full  = title + ' ' + body;
+    return {
+      id:         Date.now() + i,
+      date:       meta.date || '',
+      title,
+      body,
+      source:     meta.source || '',
+      tags:       autoTagNews(full),
+      geo:        autoGeoNews(full, meta.geo),
+      addedBy:    state.user?.name || '',
+      addedAt:    new Date().toISOString().slice(0,10),
+      batchId:    meta.batchId,
+      batchLabel: meta.batchLabel,
+    };
+  });
+}
+
+function saveNewsLocal() {
+  try { localStorage.setItem('mapap_news', JSON.stringify(state.newsItems)); } catch(e) {}
+}
+function deleteNewsItem(id) {
+  state.newsItems = state.newsItems.filter(n => n.id !== id);
+  saveNewsLocal(); render();
+}
+function deleteBatch(batchId) {
+  if (!confirm('Удалить всю эту загрузку?')) return;
+  state.newsItems = state.newsItems.filter(n => n.batchId !== batchId);
+  saveNewsLocal(); render();
+}
+
+function renderNewsAnalytics() {
+  const items = state.newsItems;
+  const f = state.newsFilter;
+  const totalCount = items.length;
+  const kzCount    = items.filter(n => n.geo === 'kz').length;
+  const worldCount = items.filter(n => n.geo === 'world').length;
+  const batchIds   = [...new Set(items.map(n => n.batchId))];
+
+  let filtered = [...items].reverse();
+  if (f.tag)    filtered = filtered.filter(n => n.tags.includes(f.tag));
+  if (f.geo)    filtered = filtered.filter(n => n.geo === f.geo);
+  if (f.batch)  filtered = filtered.filter(n => String(n.batchId) === String(f.batch));
+  if (f.search) { const q = f.search.toLowerCase(); filtered = filtered.filter(n => (n.title+' '+n.body).toLowerCase().includes(q)); }
+
+  const dirCounts = NEWS_TAG_RULES.map(r => ({ ...r, count: items.filter(n => n.tags.includes(r.tag)).length }));
+
+  const monthMap = {};
+  items.forEach(n => { const m = (n.date||n.addedAt).slice(0,7); monthMap[m] = (monthMap[m]||0) + 1; });
+  const months = Object.keys(monthMap).sort().slice(-18);
+  const maxM   = Math.max(...months.map(m=>monthMap[m]), 1);
+
+  const batchList = [...new Map(items.map(n=>[n.batchId,{id:n.batchId,label:n.batchLabel,count:items.filter(x=>x.batchId===n.batchId).length}])).values()];
+
+  if (totalCount === 0) return `
+  <div class="p-6 max-w-5xl mx-auto">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px">
+      <div><h1 style="font-size:24px;font-weight:700;color:#0f172a">Аналитика новостей</h1>
+      <div style="font-size:13px;color:#64748b;margin-top:2px">Транспорт и логистика · Казахстан и мир</div></div>
+      <button class="btn btn-primary" onclick="state.showUploadModal=true;render()">+ Загрузить новости</button>
+    </div>
+    <div class="card p-10" style="text-align:center">
+      <div style="font-size:40px;margin-bottom:12px">📰</div>
+      <div style="font-size:16px;font-weight:600;color:#475569;margin-bottom:8px">Новостей пока нет</div>
+      <div style="font-size:13px;color:#94a3b8;margin-bottom:20px">Загрузите ваши еженедельные подборки — один .txt файл или вставьте текст</div>
+      <button class="btn btn-primary" onclick="state.showUploadModal=true;render()">Загрузить первую подборку</button>
+    </div>
+  </div>`;
+
+  return `
+  <div class="p-6 max-w-5xl mx-auto">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+      <div><h1 style="font-size:24px;font-weight:700;color:#0f172a">Аналитика новостей</h1>
+      <div style="font-size:13px;color:#64748b;margin-top:2px">Транспорт и логистика · Казахстан и мир</div></div>
+      <button class="btn btn-primary" onclick="state.showUploadModal=true;render()">+ Загрузить новости</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      ${[['📄','Новостей всего',totalCount,'#1d4ed8'],['🇰🇿','По Казахстану',kzCount,'#059669'],['🌍','Международные',worldCount,'#7c3aed'],['📂','Загрузок',batchIds.length,'#d97706']]
+        .map(([ic,lb,v,c])=>`<div class="card p-4"><div style="font-size:18px;margin-bottom:4px">${ic}</div><div style="font-size:26px;font-weight:700;color:${c}">${v}</div><div style="font-size:11px;color:#64748b">${lb}</div></div>`).join('')}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;margin-bottom:20px">
+      <div class="card p-5">
+        <div style="font-size:13px;font-weight:600;color:#0f172a;margin-bottom:14px">По месяцам</div>
+        ${months.length ? `
+        <div style="display:flex;align-items:flex-end;gap:3px;height:90px;padding-bottom:20px;position:relative">
+          ${months.map(m=>`
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:2px">
+            <div style="background:#3b82f6;border-radius:3px 3px 0 0;width:100%;height:${Math.round(monthMap[m]/maxM*68)}px;min-height:3px" title="${monthMap[m]} шт."></div>
+            <div style="font-size:8px;color:#94a3b8;writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;height:18px;line-height:18px">${m.slice(5)}.${m.slice(2,4)}</div>
+          </div>`).join('')}
+        </div>` : '<div style="color:#94a3b8;font-size:12px">Нет данных</div>'}
+      </div>
+      <div class="card p-5">
+        <div style="font-size:13px;font-weight:600;color:#0f172a;margin-bottom:12px">По направлениям</div>
+        ${dirCounts.filter(d=>d.count>0).map(d=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f8fafc">
+          <span style="background:${d.color};color:${d.fg};font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px">${d.label}</span>
+          <strong style="font-size:13px;color:#374151">${d.count}</strong>
+        </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="card p-4" style="margin-bottom:16px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input class="input" style="width:190px" placeholder="🔍 Поиск..." value="${f.search||''}" oninput="state.newsFilter.search=this.value;render()" />
+        <select class="input" style="width:150px" onchange="state.newsFilter.tag=this.value;render()">
+          <option value="">Все направления</option>
+          ${NEWS_TAG_RULES.map(r=>`<option value="${r.tag}" ${f.tag===r.tag?'selected':''}>${r.label}</option>`).join('')}
+        </select>
+        <select class="input" style="width:135px" onchange="state.newsFilter.geo=this.value;render()">
+          <option value="">КЗ и Мир</option>
+          <option value="kz" ${f.geo==='kz'?'selected':''}>🇰🇿 Казахстан</option>
+          <option value="world" ${f.geo==='world'?'selected':''}>🌍 Мир</option>
+        </select>
+        <select class="input" style="width:180px" onchange="state.newsFilter.batch=this.value;render()">
+          <option value="">Все загрузки</option>
+          ${batchList.map(b=>`<option value="${b.id}" ${String(f.batch)===String(b.id)?'selected':''}>${b.label} (${b.count})</option>`).join('')}
+        </select>
+        ${(f.tag||f.geo||f.search||f.batch)?`<button class="btn btn-secondary" style="padding:6px 12px" onclick="state.newsFilter={tag:'',geo:'',search:'',batch:''};render()">✕ Сбросить</button>`:''}
+        <span style="font-size:12px;color:#94a3b8;margin-left:auto">${filtered.length} из ${totalCount}</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      ${filtered.length === 0 ? `<div style="padding:32px;text-align:center;color:#94a3b8;font-size:13px">Ничего не найдено</div>` :
+      filtered.map((n,i)=>{
+        return `<div style="padding:14px 20px;border-bottom:${i<filtered.length-1?'1px solid #f1f5f9':'none'}">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;gap:5px;margin-bottom:5px;flex-wrap:wrap;align-items:center">
+                ${n.tags.map(t=>{const d=NEWS_TAG_RULES.find(x=>x.tag===t)||NEWS_TAG_RULES[5];return `<span style="background:${d.color};color:${d.fg};font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px">${d.label}</span>`;}).join('')}
+                <span style="font-size:10px;color:#94a3b8">${n.geo==='kz'?'🇰🇿':n.geo==='world'?'🌍':'🌐'} ${n.date||n.addedAt}${n.source?' · '+n.source:''}</span>
+              </div>
+              <div style="font-size:13px;font-weight:600;color:#0f172a;line-height:1.4">${n.title}</div>
+              ${n.body?`<div style="font-size:12px;color:#475569;margin-top:4px;line-height:1.6">${n.body.length>280?n.body.slice(0,280)+'…':n.body}</div>`:''}
+            </div>
+            <button onclick="deleteNewsItem(${n.id})" title="Удалить" style="background:none;border:none;color:#d1d5db;cursor:pointer;font-size:14px;padding:2px 4px;flex-shrink:0">🗑</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    ${batchList.length ? `
+    <div style="margin-top:4px">
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:6px">Загруженные подборки:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${batchList.map(b=>`
+        <div style="display:flex;align-items:center;gap:5px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:4px 10px;font-size:12px">
+          <span style="color:#374151">${b.label}</span><span style="color:#94a3b8">(${b.count})</span>
+          <button onclick="deleteBatch(${b.id})" title="Удалить загрузку" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:11px;padding:0 2px">✕</button>
+        </div>`).join('')}
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
+function renderUploadModal() {
+  const f = state.uploadForm;
+  return `
+  <div class="modal-overlay" onclick="if(event.target===this){state.showUploadModal=false;render()}">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width:640px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e5e7eb">
+        <h2 style="font-size:16px;font-weight:600">📰 Загрузить подборку новостей</h2>
+        <button onclick="state.showUploadModal=false;render()" style="color:#9ca3af;font-size:22px;background:none;border:none;cursor:pointer">×</button>
+      </div>
+      <div style="padding:20px 24px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <div>
+            <label style="font-size:12px;font-weight:500;color:#374151;display:block;margin-bottom:4px">Источник / название</label>
+            <input class="input" placeholder="Еженедельная подборка, май 2025..." value="${f.source||''}" oninput="state.uploadForm.source=this.value" />
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:500;color:#374151;display:block;margin-bottom:4px">Дата / период</label>
+            <input class="input" placeholder="2025-05-20 или «Май 2025»" value="${f.date||''}" oninput="state.uploadForm.date=this.value" />
+          </div>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:12px;font-weight:500;color:#374151;display:block;margin-bottom:6px">География</label>
+          <div style="display:flex;gap:16px">
+            ${[['kz','🇰🇿 Казахстан'],['world','🌍 Мировые'],['both','🌐 Авто-определение']]
+              .map(([v,l])=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="radio" name="news_geo" value="${v}" ${f.geo===v?'checked':''} onchange="state.uploadForm.geo='${v}'" />${l}</label>`).join('')}
+          </div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;font-weight:500;color:#374151;display:block;margin-bottom:4px">Вставьте текст <span style="color:#94a3b8;font-weight:400">— каждый абзац (пустая строка) = отдельная новость</span></label>
+          <textarea class="input" rows="10" style="resize:vertical;font-size:12px;line-height:1.6" placeholder="Пример:&#10;&#10;Казахстан увеличил транзит через Достык на 15% — 2.4 млн тонн за квартал. КТЖ планирует удвоить пропускную способность к 2027 году.&#10;&#10;China Airlines открывает грузовой маршрут Алматы–Пекин три раза в неделю. Первый рейс запланирован на июнь 2025." oninput="state.uploadForm.text=this.value;state.uploadForm.previewCount=0;render()">${f.text||''}</textarea>
+        </div>
+        <div style="margin-bottom:16px">
+          <label style="font-size:12px;font-weight:500;color:#374151;display:block;margin-bottom:4px">Или загрузите .txt файл</label>
+          <input type="file" accept=".txt,.md" onchange="uploadNewsFile(event)" style="font-size:12px" />
+          <div style="font-size:11px;color:#94a3b8;margin-top:3px">Для .docx — откройте в Word, выделите всё (Ctrl+A), скопируйте и вставьте выше</div>
+        </div>
+        ${f.previewCount ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;font-size:13px;color:#166534;margin-bottom:14px">✓ Файл загружен — найдено новостей: <strong>${f.previewCount}</strong></div>` : ''}
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-secondary" onclick="state.showUploadModal=false;state.uploadForm={text:'',source:'',date:'',geo:'both',previewCount:0};render()">Отмена</button>
+          <button class="btn btn-primary" onclick="submitNewsUpload()">Загрузить</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function uploadNewsFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    state.uploadForm.text = text;
+    const paras = text.split(/\n{2,}/).filter(p=>p.trim().length>=15);
+    state.uploadForm.previewCount = paras.length || text.split('\n').filter(l=>l.trim().length>=15).length;
+    render();
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function submitNewsUpload() {
+  const f = state.uploadForm;
+  if (!f.text.trim()) { alert('Добавьте текст или загрузите .txt файл'); return; }
+  const batchId = Date.now();
+  const meta = {
+    source:     f.source.trim() || 'Без названия',
+    date:       f.date.trim()   || new Date().toISOString().slice(0,10),
+    geo:        f.geo           || 'both',
+    batchId,
+    batchLabel: (f.source.trim() || f.date.trim() || new Date().toLocaleDateString('ru-RU')),
+  };
+  const parsed = parseNewsText(f.text, meta);
+  if (!parsed.length) { alert('Не удалось распознать новости. Разделите абзацы пустой строкой.'); return; }
+  state.newsItems = [...state.newsItems, ...parsed];
+  saveNewsLocal();
+  state.showUploadModal = false;
+  state.uploadForm = { text:'', source:'', date:'', geo:'both', previewCount:0 };
+  state.page = 'news';
+  render();
 }
 
 // ─── ACTIONS ──────────────────────────────────────────────────────────────────
